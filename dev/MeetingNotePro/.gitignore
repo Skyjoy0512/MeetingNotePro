@@ -1,0 +1,62 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/*.xcworkspace/
+!*.xcodeproj/*.xcworkspace/contents.xcworkspacedata
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+
+# User-specific xcuserdata
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Build generated
+build/
+DerivedData/
+
+# Various settings
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+
+# Other
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode Patch
+*.xcodeproj/*.xcworkspace/
+
+# macOS
+.DS_Store
+
+# Backup files
+*.backup
+
+# Temporary files
+*.sh
+docs/
+App/
+Core/
+Data/
+Presentation/
+ViewModels/
+Views/
+Models/
+Resources/
+Preview Content/
+Assets.xcassets/
+ContentView.swift
+Package.swift
+
+# Keep only the working iOS project
+!MeetingNotePro/
+!MeetingNotePro.xcodeproj/
+!*.md
