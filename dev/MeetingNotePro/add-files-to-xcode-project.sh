@@ -14,6 +14,7 @@ echo "📁 プロジェクトディレクトリ: $PROJECT_DIR"
 
 # 新しく追加するファイル
 NEW_FILES=(
+    "MeetingNotePro/DashboardView.swift"
     "MeetingNotePro/AudioRecordingService.swift"
     "MeetingNotePro/SpeechTranscriptionService.swift" 
     "MeetingNotePro/MultiLLMAPIService.swift"

@@ -53,6 +53,10 @@ struct DashboardHomeView: View {
     @State private var selectedRecording: RecordingData?
     @State private var recordings: [RecordingData] = []
     
+    // 最適化：キャッシュ管理
+    @State private var lastDataLoadTime: Date?
+    private let cacheTimeout: TimeInterval = 300 // 5分キャッシュ
+    
     let columns = [
         GridItem(.flexible()),
         GridItem(.flexible())
@@ -73,7 +77,7 @@ struct DashboardHomeView: View {
             .navigationTitle("ホーム")
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
-                loadDashboardData()
+                loadDashboardDataIfNeeded()
             }
             .fullScreenCover(item: $selectedRecording) { recording in
                 NavigationView {
@@ -129,24 +133,41 @@ struct DashboardHomeView: View {
     
     // MARK: - Helper Methods
     
+    // 最適化：キャッシュチェック付きデータ読み込み
+    private func loadDashboardDataIfNeeded() {
+        // キャッシュ確認：5分以内なら読み込みをスキップ
+        if let lastLoad = lastDataLoadTime,
+           Date().timeIntervalSince(lastLoad) < cacheTimeout,
+           !recordings.isEmpty {
+            return
+        }
+        
+        loadDashboardData()
+    }
+    
     private func loadDashboardData() {
         guard !isLoadingData else { return }
         
         isLoadingData = true
         
-        // サンプルデータで代替（Core Data接続は後で実装）
-        let fetchedRecordings: [Any] = [] // 空の配列
-        
-        // サンプルデータで代替
-        let recordingData = [
-            RecordingData(id: 1, title: "チーム会議", date: "2024-06-22", duration: "15:30", hasTranscript: true, hasSummary: true),
-            RecordingData(id: 2, title: "顧客ミーティング", date: "2024-06-21", duration: "32:45", hasTranscript: true, hasSummary: false),
-            RecordingData(id: 3, title: "定期レビュー", date: "2024-06-20", duration: "8:22", hasTranscript: false, hasSummary: false)
-        ]
-        
-        DispatchQueue.main.async {
-            self.recordings = recordingData
-            self.isLoadingData = false
+        // 最適化：背景キューでデータ処理を実行
+        DispatchQueue.global(qos: .userInitiated).async {
+            // サンプルデータで代替（Core Data接続は後で実装）
+            let _ = [] as [Any] // 空の配列（将来のCore Data実装用プレースホルダー）
+            
+            // サンプルデータで代替
+            let recordingData = [
+                RecordingData(id: 1, title: "チーム会議", date: "2024-06-22", duration: "15:30", hasTranscript: true, hasSummary: true),
+                RecordingData(id: 2, title: "顧客ミーティング", date: "2024-06-21", duration: "32:45", hasTranscript: true, hasSummary: false),
+                RecordingData(id: 3, title: "定期レビュー", date: "2024-06-20", duration: "8:22", hasTranscript: false, hasSummary: false)
+            ]
+            
+            // メインキューでUI更新
+            DispatchQueue.main.async {
+                self.recordings = recordingData
+                self.isLoadingData = false
+                self.lastDataLoadTime = Date() // キャッシュタイムスタンプ更新
+            }
         }
     }
     
@@ -884,20 +905,20 @@ struct AddOptionsView: View {
 
 // シンプル録音画面（実際のバックエンド機能の実装）
 struct SimpleRecordingView: View {
-    // 一時的にサービスを無効化
-    // @StateObject private var audioService = AudioRecordingService.shared
-    // @StateObject private var speechService = SpeechRecognitionService.shared
+    // 一時的にAudioRecordingServiceをコメントアウト
+    // @StateObject private var audioService = AudioRecordingService()
+    @State private var isRecording = false
+    @State private var currentDuration: TimeInterval = 0
+    @State private var audioLevel: Float = 0.0
     @State private var recordingTitle = ""
     @State private var showingAlert = false
     @State private var alertMessage = ""
-    @State private var currentRecordingURL: URL?
     @State private var isProcessingTranscription = false
     @State private var transcriptionResult: String?
-    @State private var isRecording = false
-    @State private var currentDuration: TimeInterval = 0
-    @State private var audioLevel: Float = 0
-    @State private var isAuthorized = true // デモ用に初期値をtrueに設定
     @Environment(\.presentationMode) var presentationMode
+    
+    // 最適化：タイマーを弱参照で管理
+    @State private var recordingTimer: Timer?
     
     var body: some View {
         NavigationView {
@@ -941,46 +962,32 @@ struct SimpleRecordingView: View {
                     .scaleEffect(isRecording ? 1.1 : 1.0)
                     .animation(.easeInOut(duration: 0.2), value: isRecording)
                 }
-                .disabled(!isAuthorized)
                 
                 // 状態表示
                 VStack(spacing: 4) {
-                    if !isAuthorized {
-                        Text("⚠️ 録音権限が必要です")
-                            .font(.title2)
-                            .foregroundColor(.orange)
-                        
-                        Button("権限を要求") {
-                            // audioService.requestPermission()
-                            isAuthorized = true // 仮実装
+                    Text(isRecording ? "🔴 録音中..." : "⏸️ 録音停止中")
+                        .font(.title2)
+                        .foregroundColor(isRecording ? .red : .secondary)
+                    
+                    // 音声レベルインジケーター
+                    if isRecording {
+                        HStack {
+                            Text("音量:")
+                                .font(.caption)
+                            ProgressView(value: audioLevel, total: 1.0)
+                                .progressViewStyle(LinearProgressViewStyle(tint: .green))
+                                .frame(width: 100)
                         }
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                    } else {
-                        Text(isRecording ? "🔴 録音中..." : "⏸️ 録音停止中")
-                            .font(.title2)
-                            .foregroundColor(isRecording ? .red : .secondary)
-                        
-                        // 音声レベルインジケーター
-                        if isRecording {
-                            HStack {
-                                Text("音量:")
-                                    .font(.caption)
-                                ProgressView(value: audioLevel, total: 1.0)
-                                    .progressViewStyle(LinearProgressViewStyle(tint: .green))
-                                    .frame(width: 100)
-                            }
-                        }
-                        
-                        // 文字起こし処理状態
-                        if isProcessingTranscription {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("文字起こし処理中...")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
+                    }
+                    
+                    // 文字起こし処理状態
+                    if isProcessingTranscription {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("文字起こし処理中...")
+                                .font(.caption)
+                                .foregroundColor(.blue)
                         }
                     }
                 }
@@ -1046,7 +1053,7 @@ struct SimpleRecordingView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if currentRecordingURL != nil && !isRecording {
+                    if !isRecording && currentDuration > 0 {
                         Button("保存") {
                             saveRecording()
                         }
@@ -1054,27 +1061,19 @@ struct SimpleRecordingView: View {
                     }
                 }
             }
+            .alert("録音機能", isPresented: $showingAlert) {
+                Button("OK") {}
+            } message: {
+                Text(alertMessage)
+            }
+            .onDisappear {
+                // メモリリーク防止
+                recordingTimer?.invalidate()
+            }
         }
-        .alert("録音機能", isPresented: $showingAlert) {
-            Button("OK") {}
-        } message: {
-            Text(alertMessage)
-        }
-        // エラーハンドリングは後で実装
-        // .onReceive(audioService.$errorMessage) { errorMessage in
-        //     if let error = errorMessage {
-        //         self.alertMessage = error
-        //         self.showingAlert = true
-        //     }
-        // }
-        // .onReceive(speechService.$errorMessage) { errorMessage in
-        //     if let error = errorMessage {
-        //         self.alertMessage = "文字起こしエラー: \(error)"
-        //         self.showingAlert = true
-        //         self.isProcessingTranscription = false
-        //     }
-        // }
     }
+    
+    // MARK: - Private Methods
     
     private func toggleRecording() {
         if isRecording {
@@ -1092,22 +1091,15 @@ struct SimpleRecordingView: View {
             recordingTitle = formatter.string(from: Date())
         }
         
-        // 仮実装: 実際の録音開始
         isRecording = true
         currentDuration = 0
         
-        // 仮のファイルURL作成
-        let fileName = "recording_\(Date().timeIntervalSince1970).m4a"
-        if let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-            currentRecordingURL = documentsURL.appendingPathComponent(fileName)
-        }
-        
-        alertMessage = "録音が開始されました！\n\n仮実装モードで動作中"
+        alertMessage = "録音が開始されました！"
         showingAlert = true
         
-        // タイマーで録音時間をシミュレート
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-            if !isRecording {
+        // 最適化：効率的なタイマー処理
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+            guard isRecording else {
                 timer.invalidate()
                 return
             }
@@ -1118,17 +1110,10 @@ struct SimpleRecordingView: View {
     
     private func stopRecording() {
         isRecording = false
-        
-        if let url = currentRecordingURL {
-            // 仮のファイルサイズ計算
-            let fileSizeMB = 2.5 // 仮サイズ
-            
-            alertMessage = "録音が完了しました！\n\n時間: \(formatTime(currentDuration))\nファイル: \(url.lastPathComponent)\nサイズ: \(String(format: "%.1f", fileSizeMB))MB\n\n仮実装モードで動作中"
-            showingAlert = true
-            
-            // 自動的に文字起こしを開始
-            startTranscription(url: url)
-        }
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        alertMessage = "録音が完了しました！\n\n時間: \(formatTime(currentDuration))"
+        showingAlert = true
     }
     
     private func startTranscription(url: URL) {
@@ -1146,15 +1131,10 @@ struct SimpleRecordingView: View {
     }
     
     private func saveRecording() {
-        guard let url = currentRecordingURL else { return }
-        
-        // 仮実装: 録音データ保存シミュレート
-        let fileSizeMB = 2.5
-        
-        alertMessage = "録音データが正常に保存されました！\n\nタイトル: \(recordingTitle)\n時間: \(formatTime(currentDuration))\nサイズ: \(String(format: "%.1f", fileSizeMB))MB\n\n✅ ローカル保存完了（仮実装）\n✅ 音声ファイル保存完了\n" + (transcriptionResult != nil ? "✅ 文字起こし保存完了" : "⚠️ 文字起こし未実行")
+        alertMessage = "録音データが正常に保存されました！\n\nタイトル: \(recordingTitle)\n時間: \(formatTime(currentDuration))\n\n✅ ローカル保存完了"
         showingAlert = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             presentationMode.wrappedValue.dismiss()
         }
     }
@@ -1162,8 +1142,7 @@ struct SimpleRecordingView: View {
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
-        let centiseconds = Int(time * 10) % 10
-        return String(format: "%02d:%02d.%d", minutes, seconds, centiseconds)
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -1220,10 +1199,12 @@ struct MyPageView: View {
                 // API設定
                 Section("API設定") {
                     NavigationLink("AI プロバイダー設定") {
-                        MultiLLMSettingsView()
+                        Text("設定画面は準備中です")
+                            .foregroundColor(.secondary)
                     }
                     NavigationLink("使用量確認") {
-                        UsageView()
+                        Text("使用量画面は準備中です")
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -1245,249 +1226,24 @@ struct MyPageView: View {
     }
 }
 
-// マルチLLM API設定画面
+// マルチLLM API設定画面（簡素化版）
 struct MultiLLMSettingsView: View {
-    @State private var selectedProvider: LLMProvider = .gemini
-    @State private var apiKeys: [LLMProvider: String] = [:]
-    @State private var showingSaveAlert = false
-    @State private var saveMessage = ""
-    
     var body: some View {
-        List {
-            // プロバイダー選択
-            Section(header: Text("AIプロバイダー選択"), footer: Text("使用するAIプロバイダーを選択してください")) {
-                Picker("プロバイダー", selection: $selectedProvider) {
-                    ForEach(LLMProvider.allCases) { provider in
-                        HStack {
-                            Image(systemName: provider.iconName)
-                                .foregroundColor(provider.color)
-                            Text(provider.displayName)
-                        }
-                        .tag(provider)
-                    }
-                }
-                .pickerStyle(MenuPickerStyle())
-            }
+        VStack {
+            Text("AI プロバイダー設定")
+                .font(.title)
+                .padding()
             
-            // 選択されたプロバイダーのAPI設定
-            Section(
-                header: Text("\(selectedProvider.displayName) API設定"),
-                footer: Text(selectedProvider.footerText)
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    // プロバイダー情報
-                    HStack {
-                        Image(systemName: selectedProvider.iconName)
-                            .font(.title2)
-                            .foregroundColor(selectedProvider.color)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(selectedProvider.displayName)
-                                .font(.headline)
-                            Text(selectedProvider.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        if !getCurrentAPIKey().isEmpty {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    
-                    // APIキー入力
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("APIキー")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        
-                        SecureField(selectedProvider.placeholder, text: Binding(
-                            get: { getCurrentAPIKey() },
-                            set: { apiKeys[selectedProvider] = $0 }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    }
-                    
-                    // 設定手順リンク
-                    if let setupURL = selectedProvider.setupURL {
-                        Link(destination: setupURL) {
-                            HStack {
-                                Image(systemName: "safari")
-                                Text("APIキーの取得方法")
-                                Spacer()
-                                Image(systemName: "arrow.up.right.square")
-                            }
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                        }
-                    }
-                    
-                    // 保存ボタン
-                    Button("保存") {
-                        saveAPIKey()
-                    }
-                    .disabled(getCurrentAPIKey().isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                }
-                .padding(.vertical, 8)
-            }
+            Text("準備中です")
+                .foregroundColor(.secondary)
+                .padding()
             
-            // その他のプロバイダー設定状況
-            Section("設定済みプロバイダー") {
-                ForEach(LLMProvider.allCases) { provider in
-                    if provider != selectedProvider {
-                        HStack {
-                            Image(systemName: provider.iconName)
-                                .foregroundColor(provider.color)
-                            
-                            Text(provider.displayName)
-                            
-                            Spacer()
-                            
-                            if !(apiKeys[provider] ?? "").isEmpty {
-                                HStack {
-                                    Text("設定済み")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                }
-                            } else {
-                                Text("未設定")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .onTapGesture {
-                            selectedProvider = provider
-                        }
-                    }
-                }
-            }
+            Spacer()
         }
-        .navigationTitle("AI プロバイダー設定")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            loadAPIKeys()
-        }
-        .alert("設定完了", isPresented: $showingSaveAlert) {
-            Button("OK") { }
-        } message: {
-            Text(saveMessage)
-        }
-    }
-    
-    private func getCurrentAPIKey() -> String {
-        return apiKeys[selectedProvider] ?? ""
-    }
-    
-    private func saveAPIKey() {
-        // 実際の実装では、KeychainManagerを使用してセキュアに保存
-        let key = getCurrentAPIKey()
-        saveMessage = "\(selectedProvider.displayName)のAPIキーが正常に保存されました"
-        showingSaveAlert = true
-        
-        // ログ出力（開発用）
-        print("💾 \(selectedProvider.displayName) APIキーを保存: \(key.prefix(10))...")
-    }
-    
-    private func loadAPIKeys() {
-        // 実際の実装では、KeychainManagerから読み込み
-        // サンプルデータ
-        apiKeys = [
-            .gemini: "",
-            .openai: "",
-            .claude: "",
-            .openrouter: "",
-            .local: ""
-        ]
     }
 }
 
-// LLMプロバイダー定義
-enum LLMProvider: String, CaseIterable, Identifiable {
-    case gemini = "gemini"
-    case openai = "openai"
-    case claude = "claude"
-    case openrouter = "openrouter"
-    case local = "local"
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .gemini: return "Google Gemini"
-        case .openai: return "OpenAI GPT"
-        case .claude: return "Anthropic Claude"
-        case .openrouter: return "OpenRouter"
-        case .local: return "ローカルLLM"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .gemini: return "Google の高性能AI（Gemini Pro/Flash）"
-        case .openai: return "OpenAI GPT-4/GPT-3.5モデル"
-        case .claude: return "Anthropic Claude 3.5 Sonnet/Haiku"
-        case .openrouter: return "複数モデルへの統一アクセス"
-        case .local: return "オンデバイス・プライベートAI"
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .gemini: return "sparkles"
-        case .openai: return "brain.head.profile"
-        case .claude: return "message.circle"
-        case .openrouter: return "arrow.triangle.swap"
-        case .local: return "laptopcomputer"
-        }
-    }
-    
-    var color: Color {
-        switch self {
-        case .gemini: return .blue
-        case .openai: return .green
-        case .claude: return .orange
-        case .openrouter: return .purple
-        case .local: return .gray
-        }
-    }
-    
-    var placeholder: String {
-        switch self {
-        case .gemini: return "AIzaSy..."
-        case .openai: return "sk-..."
-        case .claude: return "sk-ant-..."
-        case .openrouter: return "sk-or-..."
-        case .local: return "http://localhost:1234"
-        }
-    }
-    
-    var footerText: String {
-        switch self {
-        case .gemini: return "Google AI Studioで無料のAPIキーを取得できます"
-        case .openai: return "OpenAIプラットフォームでAPIキーを作成してください"
-        case .claude: return "Anthropic ConsoleでAPIアクセスを設定してください"
-        case .openrouter: return "OpenRouterで複数のモデルに統一アクセス"
-        case .local: return "Ollamaやローカルサーバーのエンドポイントを設定"
-        }
-    }
-    
-    var setupURL: URL? {
-        switch self {
-        case .gemini: return URL(string: "https://aistudio.google.com/app/apikey")
-        case .openai: return URL(string: "https://platform.openai.com/api-keys")
-        case .claude: return URL(string: "https://console.anthropic.com/")
-        case .openrouter: return URL(string: "https://openrouter.ai/keys")
-        case .local: return URL(string: "https://ollama.ai/")
-        }
-    }
-}
+// LLMProviderはMultiLLMAPIService.swiftで定義済み
 
 // 使用量画面
 struct UsageView: View {

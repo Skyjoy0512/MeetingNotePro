@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // サポートするLLMプロバイダー
 enum LLMProvider: String, CaseIterable, Identifiable {
@@ -17,6 +18,26 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         case .claude: return "Anthropic Claude"
         case .openrouter: return "OpenRouter"
         case .local: return "ローカルLLM"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .gemini: return "brain.head.profile"
+        case .openai: return "brain"
+        case .claude: return "person.bubble"
+        case .openrouter: return "arrow.triangle.2.circlepath"
+        case .local: return "laptopcomputer"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .gemini: return .blue
+        case .openai: return .green
+        case .claude: return .orange
+        case .openrouter: return .purple
+        case .local: return .gray
         }
     }
 }
