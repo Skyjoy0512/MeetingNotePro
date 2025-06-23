@@ -1,0 +1,16 @@
+<!-- 以下をInfo.plistに追加してください -->
+
+<!-- マイク権限 -->
+<key>NSMicrophoneUsageDescription</key>
+<string>会議の録音のためにマイクへのアクセスが必要です</string>
+
+<!-- 音声認識権限 -->
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>録音の文字起こしのために音声認識機能が必要です</string>
+
+<!-- ネットワーク権限（AI API使用） -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+</dict>

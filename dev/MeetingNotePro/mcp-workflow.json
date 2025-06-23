@@ -1,0 +1,43 @@
+{
+  "name": "MeetingNotePro Development Workflow",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "name": "code-generation",
+      "tool": "claude-code",
+      "description": "Claude CodeによるSwift実装"
+    },
+    {
+      "name": "auto-build", 
+      "tool": "xcodebuildmcp",
+      "description": "XcodeBuildMCPによる自動ビルド",
+      "command": "build",
+      "options": {
+        "project": "MeetingNotePro.xcodeproj",
+        "scheme": "MeetingNotePro",
+        "destination": "platform=iOS Simulator,name=iPhone 16,OS=latest"
+      }
+    },
+    {
+      "name": "ui-test",
+      "tool": "ios-simulator-mcp", 
+      "description": "iOS Simulator MCPによるUI自動テスト",
+      "actions": [
+        "screenshot",
+        "accessibility-check",
+        "user-flow-test"
+      ]
+    },
+    {
+      "name": "error-fix",
+      "tool": "claude-code + xcodebuildmcp",
+      "description": "自動エラー修正ループ",
+      "condition": "if build errors detected"
+    }
+  ],
+  "triggers": {
+    "on-code-change": ["auto-build", "ui-test"],
+    "on-build-error": ["error-fix"],
+    "on-manual": ["code-generation", "auto-build", "ui-test"]
+  }
+}
