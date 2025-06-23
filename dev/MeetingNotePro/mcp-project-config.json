@@ -1,0 +1,34 @@
+{
+  "project": "MeetingNotePro",
+  "xcodeproj": "./MeetingNotePro.xcodeproj",
+  "scheme": "MeetingNotePro", 
+  "destination": "platform=iOS Simulator,name=iPhone 15 Pro,OS=latest",
+  "buildConfiguration": "Debug",
+  "tools": {
+    "XcodeBuildMCP": {
+      "enabled": true,
+      "features": [
+        "build",
+        "test",
+        "clean", 
+        "archive",
+        "project-info"
+      ]
+    },
+    "ios-simulator-mcp": {
+      "enabled": true,
+      "features": [
+        "simulator-control",
+        "ui-automation",
+        "screenshot",
+        "accessibility-check"
+      ]
+    }
+  },
+  "automation": {
+    "build-on-save": false,
+    "test-on-build": true,
+    "screenshot-on-test": true
+  }
+}
+EOF < /dev/null
