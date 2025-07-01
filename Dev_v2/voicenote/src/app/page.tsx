@@ -110,6 +110,28 @@ export default function HomePage() {
     loadAudioFiles(true);
   }, [loadAudioFiles]);
 
+  // ファイル削除
+  const handleDeleteFile = useCallback(async (audioId: string) => {
+    console.log('🗑️ Delete file:', audioId);
+    
+    try {
+      // デモモードでは配列から削除するだけ
+      setAudioFiles(prev => prev.filter(file => file.id !== audioId));
+      
+      toast({
+        title: '削除完了',
+        description: '音声ファイルを削除しました',
+      });
+    } catch (error) {
+      console.error('❌ Delete failed:', error);
+      toast({
+        title: 'エラー',
+        description: 'ファイルの削除に失敗しました',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
+
   // ファイルアップロード成功時のコールバック
   const handleUploadSuccess = useCallback((file: AudioFile) => {
     console.log('📤 Upload success:', file);
@@ -250,6 +272,7 @@ export default function HomePage() {
                 <AudioFileListItem 
                   key={file.id} 
                   audioFile={file}
+                  onDelete={handleDeleteFile}
                 />
               ))}
             </div>

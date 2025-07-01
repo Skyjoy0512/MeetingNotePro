@@ -1,15 +1,34 @@
 import {
-  ref,
+  ref as storageRef,
   uploadBytes,
   uploadBytesResumable,
-  getDownloadURL,
+  getDownloadURL as storageGetDownloadURL,
   deleteObject,
   listAll,
   getMetadata,
   UploadTask,
   UploadTaskSnapshot
 } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
+import { storage, isDemoMode } from '@/lib/firebase';
+
+// デモモード用のモック関数
+const createMockStorageFunction = (name: string, returnValue: any = null) => {
+  return (...args: any[]) => {
+    console.log(`🎭 Mock Storage ${name} called with:`, args);
+    return returnValue;
+  };
+};
+
+const createMockStoragePromise = (name: string, returnValue: any = null) => {
+  return (...args: any[]) => {
+    console.log(`🎭 Mock Storage ${name} called with:`, args);
+    return Promise.resolve(returnValue);
+  };
+};
+
+// Storage関数のラッパー（デモモード対応）
+const ref = isDemoMode ? createMockStorageFunction('ref', {}) : storageRef;
+const getDownloadURL = isDemoMode ? createMockStoragePromise('getDownloadURL', '/demo/mock-file.mp3') : storageGetDownloadURL;
 
 export interface UploadProgress {
   bytesTransferred: number;
@@ -41,6 +60,33 @@ export class StorageService {
     file: File,
     options?: UploadOptions
   ): Promise<string> {
+    // デモモード用の処理
+    if (isDemoMode || userId === 'demo-user-123') {
+      console.log('🎭 Storage: Demo mode upload simulation');
+      
+      return new Promise((resolve) => {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 20;
+          
+          if (options?.onProgress) {
+            options.onProgress({
+              bytesTransferred: (file.size * progress) / 100,
+              totalBytes: file.size,
+              progress: progress
+            });
+          }
+          
+          if (progress >= 100) {
+            clearInterval(interval);
+            const demoUrl = `/demo/uploads/${file.name}`;
+            options?.onComplete?.(demoUrl);
+            resolve(demoUrl);
+          }
+        }, 200);
+      });
+    }
+    
     const fileName = `${Date.now()}_${file.name}`;
     const audioRef = ref(storage, `audios/${userId}/${audioId}/${fileName}`);
     

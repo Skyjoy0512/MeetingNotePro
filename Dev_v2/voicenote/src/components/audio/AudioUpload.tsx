@@ -8,13 +8,14 @@ import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAudioUpload } from '@/hooks/useAudioUpload';
 import { useAuth } from '@/hooks/useAuth';
 import { formatFileSize } from '@/lib/utils';
+import { AudioFile } from '@/types';
 
 interface AudioUploadProps {
-  onUploadComplete?: (audioId: string) => void;
-  onUploadError?: (error: string) => void;
+  onUploadSuccess?: (file: AudioFile) => void;
+  onClose?: () => void;
 }
 
-export const AudioUpload = ({ onUploadComplete, onUploadError }: AudioUploadProps) => {
+export const AudioUpload = ({ onUploadSuccess, onClose }: AudioUploadProps) => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -29,21 +30,24 @@ export const AudioUpload = ({ onUploadComplete, onUploadError }: AudioUploadProp
   } = useAudioUpload(user?.uid || '');
 
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
 
-    const result = await uploadFile(file);
-    if (result) {
-      onUploadComplete?.(result.id);
-    } else if (error) {
-      onUploadError?.(error);
+      const result = await uploadFile(file);
+      if (result) {
+        onUploadSuccess?.(result);
+        onClose?.();
+      }
+    } catch (error) {
+      console.error('File select error:', error);
+    } finally {
+      // ファイル入力をリセット
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
-
-    // ファイル入力をリセット
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [uploadFile, error, onUploadComplete, onUploadError]);
+  }, [uploadFile, onUploadSuccess, onClose]);
 
   const handleUploadClick = useCallback(() => {
     if (isUploading) return;

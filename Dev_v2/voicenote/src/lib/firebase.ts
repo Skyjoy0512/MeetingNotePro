@@ -13,18 +13,45 @@ let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
 
-// 常にデモモードで動作
-const isDevMode = true;
-const hasValidConfig = false;
+// 設定の有効性チェック
+const hasValidConfig = Boolean(
+  firebaseConfig.apiKey && 
+  firebaseConfig.apiKey !== 'demo-api-key' &&
+  firebaseConfig.projectId && 
+  firebaseConfig.projectId !== 'voicenote-demo'
+);
 
-console.log('🎭 Running in demo mode - Firebase features disabled');
-console.log('🎭 All Firebase operations will be mocked');
+const isDevMode = process.env.NODE_ENV === 'development';
+const isDemoMode = !hasValidConfig;
 
-// デモモード用のダミー初期化
-app = {} as FirebaseApp;
-auth = {} as Auth;
-db = {} as Firestore;
-storage = {} as FirebaseStorage;
+if (hasValidConfig) {
+  try {
+    console.log('🚀 Initializing Firebase with real configuration');
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    
+    console.log('✅ Firebase initialized successfully');
+  } catch (error) {
+    console.error('❌ Firebase initialization failed:', error);
+    // フォールバック: デモモード
+    console.log('🎭 Falling back to demo mode');
+    app = {} as FirebaseApp;
+    auth = {} as Auth;
+    db = {} as Firestore;
+    storage = {} as FirebaseStorage;
+  }
+} else {
+  console.log('🎭 Running in demo mode - Firebase features disabled');
+  console.log('🎭 Set NEXT_PUBLIC_FIREBASE_API_KEY to enable real Firebase');
+  
+  // デモモード用のダミー初期化
+  app = {} as FirebaseApp;
+  auth = {} as Auth;
+  db = {} as Firestore;
+  storage = {} as FirebaseStorage;
+}
 
-export { app, auth, db, storage };
+export { app, auth, db, storage, hasValidConfig, isDemoMode };
 export default app;

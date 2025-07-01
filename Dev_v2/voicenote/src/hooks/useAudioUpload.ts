@@ -22,28 +22,65 @@ export const useAudioUpload = (userId: string) => {
   });
 
   const uploadFile = useCallback(async (file: File): Promise<AudioFile | null> => {
-    console.log('📋 Starting upload for file:', file.name, 'Size:', file.size, 'Type:', file.type);
-    console.log('👤 User ID:', userId);
-    
-    // ファイル検証
-    const validation = validateAudioFile(file);
-    console.log('🔍 File validation result:', validation);
-    
-    if (!validation.valid) {
-      const errorMsg = validation.error || '無効なファイルです';
-      console.error('❌ File validation failed:', errorMsg);
-      setUploadState(prev => ({ ...prev, error: errorMsg }));
-      return null;
-    }
-
-    setUploadState({
-      isUploading: true,
-      progress: 0,
-      error: null,
-      uploadedFile: null
-    });
-
     try {
+      if (!file) {
+        throw new Error('ファイルが選択されていません');
+      }
+
+      // ファイル検証
+      const validation = validateAudioFile(file);
+      
+      if (!validation.valid) {
+        const errorMsg = validation.error || '無効なファイルです';
+        setUploadState(prev => ({ ...prev, error: errorMsg }));
+        return null;
+      }
+
+      setUploadState({
+        isUploading: true,
+        progress: 0,
+        error: null,
+        uploadedFile: null
+      });
+
+      // デモモードの場合はシンプルなモックアップロード
+      if (userId === 'demo-user-123') {
+        // アップロード進捗をシミュレート
+        for (let i = 0; i <= 100; i += 20) {
+          setUploadState(prev => ({ ...prev, progress: i }));
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // デモ用のファイル情報を作成
+        const demoFile: AudioFile = {
+          id: `demo-upload-${Date.now()}`,
+          userId: 'demo-user-123',
+          fileName: file.name,
+          fileUrl: `/demo/uploads/${file.name}`, // 安全なダミーURL
+          duration: Math.floor(Math.random() * 3600) + 300, // 5分-1時間のランダム
+          status: 'uploaded',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          audioQuality: {
+            snr: 25,
+            noiseLevel: 0.1,
+            volumeLevel: 0.8,
+            format: file.name.split('.').pop() || 'unknown',
+            sampleRate: 44100,
+            channels: 2
+          }
+        };
+
+        setUploadState({
+          isUploading: false,
+          progress: 100,
+          error: null,
+          uploadedFile: demoFile
+        });
+
+        return demoFile;
+      }
+      
       console.log('💾 Creating audio file record in database...');
       
       // 音声ファイル情報をDBに先に作成

@@ -3,13 +3,16 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { AudioFile } from '@/types';
-import { Clock, Users, ChevronRight } from 'lucide-react';
+import { Clock, Users, ChevronRight, Trash2 } from 'lucide-react';
 import { formatDuration } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 interface AudioFileListItemProps {
   audioFile: AudioFile;
+  onDelete?: (audioId: string) => void;
 }
 
 const getStatusColor = (status: AudioFile['status']) => {
@@ -53,9 +56,11 @@ const getStatusText = (status: AudioFile['status']) => {
 };
 
 export const AudioFileListItem = ({
-  audioFile
+  audioFile,
+  onDelete
 }: AudioFileListItemProps) => {
   const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
   const isProcessing = ['preprocessing', 'speaker_analysis', 'chunk_processing', 'transcribing', 'integrating'].includes(audioFile.status);
   const hasError = audioFile.status === 'error';
 
@@ -93,6 +98,25 @@ export const AudioFileListItem = ({
     }
   };
 
+  const handleDeleteClick = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // カード全体のクリックイベントを停止
+    
+    if (!onDelete) return;
+    
+    const confirmed = window.confirm(`「${audioFile.fileName}」を削除しますか？\nこの操作は元に戻せません。`);
+    if (!confirmed) return;
+    
+    setDeleting(true);
+    try {
+      await onDelete(audioFile.id);
+    } catch (error) {
+      console.error('削除に失敗しました:', error);
+      alert('削除に失敗しました。もう一度お試しください。');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
 
   return (
     <Card className="mb-3 cursor-pointer" onClick={handleItemClick}>
@@ -123,6 +147,18 @@ export const AudioFileListItem = ({
               >
                 {getStatusText(audioFile.status)}
               </Badge>
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                  onClick={handleDeleteClick}
+                  disabled={deleting}
+                  title="ファイルを削除"
+                >
+                  <Trash2 className={`h-4 w-4 ${deleting ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
               <ChevronRight className="h-4 w-4 text-gray-400" />
             </div>
           </div>

@@ -1,28 +1,59 @@
-// デモモード用のダミーインポート - Firebase関数をモック
-const collection = () => ({});
-const doc = () => ({});
-const getDoc = () => Promise.resolve({ exists: () => false });
-const getDocs = () => Promise.resolve({ docs: [], size: 0 });
-const setDoc = () => Promise.resolve();
-const updateDoc = () => Promise.resolve();
-const deleteDoc = () => Promise.resolve();
-const query = () => ({});
-const where = () => ({});
-const orderBy = () => ({});
-const limit = () => ({});
-const onSnapshot = () => () => {};
-const Timestamp = { 
+import { 
+  collection as firestoreCollection,
+  doc as firestoreDoc,
+  getDoc as firestoreGetDoc,
+  getDocs as firestoreGetDocs,
+  setDoc as firestoreSetDoc,
+  updateDoc as firestoreUpdateDoc,
+  deleteDoc as firestoreDeleteDoc,
+  query as firestoreQuery,
+  where as firestoreWhere,
+  orderBy as firestoreOrderBy,
+  limit as firestoreLimit,
+  onSnapshot as firestoreOnSnapshot,
+  Timestamp as firestoreTimestamp,
+  writeBatch as firestoreWriteBatch
+} from 'firebase/firestore';
+import { db, isDemoMode } from '@/lib/firebase';
+
+// デモモード用のモック関数
+const createMockFirestoreFunction = (name: string) => {
+  return (...args: any[]) => {
+    console.log(`🎭 Mock ${name} called with:`, args);
+    return {};
+  };
+};
+
+const createMockPromiseFunction = (name: string, returnValue: any = {}) => {
+  return (...args: any[]) => {
+    console.log(`🎭 Mock ${name} called with:`, args);
+    return Promise.resolve(returnValue);
+  };
+};
+
+// Firebase関数のラッパー（デモモード対応）
+const collection = isDemoMode ? createMockFirestoreFunction('collection') : firestoreCollection;
+const doc = isDemoMode ? createMockFirestoreFunction('doc') : firestoreDoc;
+const getDoc = isDemoMode ? createMockPromiseFunction('getDoc', { exists: () => false }) : firestoreGetDoc;
+const getDocs = isDemoMode ? createMockPromiseFunction('getDocs', { docs: [], size: 0 }) : firestoreGetDocs;
+const setDoc = isDemoMode ? createMockPromiseFunction('setDoc') : firestoreSetDoc;
+const updateDoc = isDemoMode ? createMockPromiseFunction('updateDoc') : firestoreUpdateDoc;
+const deleteDoc = isDemoMode ? createMockPromiseFunction('deleteDoc') : firestoreDeleteDoc;
+const query = isDemoMode ? createMockFirestoreFunction('query') : firestoreQuery;
+const where = isDemoMode ? createMockFirestoreFunction('where') : firestoreWhere;
+const orderBy = isDemoMode ? createMockFirestoreFunction('orderBy') : firestoreOrderBy;
+const limit = isDemoMode ? createMockFirestoreFunction('limit') : firestoreLimit;
+const onSnapshot = isDemoMode ? createMockFirestoreFunction('onSnapshot') : firestoreOnSnapshot;
+const Timestamp = isDemoMode ? { 
   now: () => new Date(), 
   fromDate: (date: Date) => date 
-};
-const writeBatch = () => ({
-  set: () => {},
-  update: () => {},
-  delete: () => {},
-  commit: () => Promise.resolve()
-});
-
-const db = {} as any;
+} : firestoreTimestamp;
+const writeBatch = isDemoMode ? () => ({
+  set: createMockFirestoreFunction('batch.set'),
+  update: createMockFirestoreFunction('batch.update'),
+  delete: createMockFirestoreFunction('batch.delete'),
+  commit: createMockPromiseFunction('batch.commit')
+}) : firestoreWriteBatch;
 import { AudioFile, UserProfile, LearningAudio, UserEmbedding, ProcessingChunk, ApiSettings } from '@/types';
 
 export class DatabaseService {
