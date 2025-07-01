@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ユーザーの音声ファイル（アップロード・処理済み）
+    match /audios/{userId}/{audioId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId
+        && isValidAudioFile(allPaths);
+    }
+    
+    // ユーザーの学習音声
+    match /learning-audios/{userId}/{audioId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId
+        && isValidAudioFile(allPaths);
+    }
+    
+    // 処理チャンク（一時ファイル）
+    match /chunks/{userId}/{audioId}/{chunkId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId
+        && isValidAudioFile(allPaths);
+    }
+    
+    // その他すべてのアクセスを拒否
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+  
+  // 音声ファイルの検証関数
+  function isValidAudioFile(fileName) {
+    return fileName.matches('.*\\.(mp3|wav|m4a|aac|ogg)$')
+      && request.resource.size <= 5 * 1024 * 1024 * 1024; // 5GB制限
+  }
+}

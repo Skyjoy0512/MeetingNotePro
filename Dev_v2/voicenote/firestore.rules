@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ユーザー情報のルール
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // API設定のルール
+    match /apiConfigs/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // API使用量統計のルール
+    match /apiUsage/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 学習音声のルール
+    match /learningAudios/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 音声ファイルのルール
+    match /audios/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // グローバル話者情報のルール（音声ファイル所有者のみ）
+    match /globalSpeakers/{audioId} {
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/audios/$(request.auth.uid)/files/$(audioId));
+    }
+    
+    // 処理チャンクのルール（音声ファイル所有者のみ）
+    match /processingChunks/{audioId}/{document=**} {
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/audios/$(request.auth.uid)/files/$(audioId));
+    }
+    
+    // ユーザーembeddingのルール
+    match /userEmbeddings/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // その他すべてのアクセスを拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
