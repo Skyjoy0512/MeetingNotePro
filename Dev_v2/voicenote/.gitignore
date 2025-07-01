@@ -33,6 +33,39 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# API keys and secrets (NEVER commit these)
+**/apikeys/**
+**/secrets/**
+**/*apikey*
+**/*secret*
+**/*credentials*
+*.key
+*.pem
+*.p12
+*.pfx
+service-account-key.json
+firebase-service-account.json
+
+# Firebase and other config files with sensitive data
+firebase-config.js
+firebase-config.ts
+**/firebase-adminsdk-*.json
+
+# Test and debug files (may contain API keys)
+test-*.js
+debug-*.js
+**/test-results/**
+**/screenshots/**
+*.png
+*.jpg
+*.jpeg
+
+# Temporary files
+*.tmp
+*.temp
+**/temp/**
+.cache/
+
 # vercel
 .vercel
 

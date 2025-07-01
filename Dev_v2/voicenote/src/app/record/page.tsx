@@ -13,14 +13,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
 export default function RecordPage() {
-  console.log('🎤 RecordPage: Component initialized');
+  console.log('🎤 RecordPage v2.0: Component initialized - ' + Date.now());
   
   const { toast } = useToast();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('record');
 
-  const handleRecordingComplete = (audioId: string) => {
-    console.log('✅ Recording completed:', audioId);
+  const handleRecordingComplete = (file: any) => {
+    console.log('✅ Recording completed:', file);
     toast({
       title: '録音完了',
       description: '音声の録音が完了しました',
@@ -30,8 +30,8 @@ export default function RecordPage() {
     window.location.href = '/';
   };
 
-  const handleUploadComplete = (audioId: string) => {
-    console.log('✅ Upload completed:', audioId);
+  const handleUploadSuccess = (file: any) => {
+    console.log('✅ Upload completed:', file);
     toast({
       title: 'アップロード完了',
       description: '音声ファイルのアップロードが完了しました',
@@ -127,8 +127,8 @@ export default function RecordPage() {
                 </div>
                 
                 <AudioUpload 
-                  onUploadComplete={handleUploadComplete}
-                  onUploadError={handleError}
+                  onUploadSuccess={handleUploadSuccess}
+                  onClose={() => {}}
                 />
               </CardContent>
             </Card>

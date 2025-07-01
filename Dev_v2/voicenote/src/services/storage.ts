@@ -27,8 +27,21 @@ const createMockStoragePromise = (name: string, returnValue: any = null) => {
 };
 
 // Storage関数のラッパー（デモモード対応）
-const ref = isDemoMode ? createMockStorageFunction('ref', {}) : storageRef;
-const getDownloadURL = isDemoMode ? createMockStoragePromise('getDownloadURL', '/demo/mock-file.mp3') : storageGetDownloadURL;
+const createRef = (storage: any, path: string) => {
+  if (isDemoMode) {
+    console.log(`🎭 Mock Storage ref called with path:`, path);
+    return { fullPath: path };
+  }
+  return storageRef(storage, path);
+};
+
+const createGetDownloadURL = async (ref: any) => {
+  if (isDemoMode) {
+    console.log(`🎭 Mock Storage getDownloadURL called`);
+    return '/demo/mock-file.mp3';
+  }
+  return await storageGetDownloadURL(ref);
+};
 
 export interface UploadProgress {
   bytesTransferred: number;
@@ -60,35 +73,11 @@ export class StorageService {
     file: File,
     options?: UploadOptions
   ): Promise<string> {
-    // デモモード用の処理
-    if (isDemoMode || userId === 'demo-user-123') {
-      console.log('🎭 Storage: Demo mode upload simulation');
-      
-      return new Promise((resolve) => {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 20;
-          
-          if (options?.onProgress) {
-            options.onProgress({
-              bytesTransferred: (file.size * progress) / 100,
-              totalBytes: file.size,
-              progress: progress
-            });
-          }
-          
-          if (progress >= 100) {
-            clearInterval(interval);
-            const demoUrl = `/demo/uploads/${file.name}`;
-            options?.onComplete?.(demoUrl);
-            resolve(demoUrl);
-          }
-        }, 200);
-      });
-    }
+    // 本番Firebase Storageを使用（デモモード条件を削除）
+    console.log('📤 Storage: Real Firebase upload for user:', userId);
     
     const fileName = `${Date.now()}_${file.name}`;
-    const audioRef = ref(storage, `audios/${userId}/${audioId}/${fileName}`);
+    const audioRef = createRef(storage, `audios/${userId}/${audioId}/${fileName}`);
     
     const metadata = {
       contentType: file.type,
@@ -124,7 +113,7 @@ export class StorageService {
             },
             async () => {
               try {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                const downloadURL = await createGetDownloadURL(uploadTask.snapshot.ref);
                 options.onComplete?.(downloadURL);
                 resolve(downloadURL);
               } catch (error) {
@@ -136,7 +125,7 @@ export class StorageService {
       } else {
         // シンプルアップロード
         const snapshot = await uploadBytes(audioRef, file, metadata);
-        return await getDownloadURL(snapshot.ref);
+        return await createGetDownloadURL(snapshot.ref);
       }
     } catch (error) {
       console.error('Failed to upload audio file:', error);
@@ -151,8 +140,10 @@ export class StorageService {
     file: File,
     options?: UploadOptions
   ): Promise<string> {
+    console.log('📤 Storage: Real learning audio upload for user:', userId);
+
     const fileName = `${Date.now()}_${file.name}`;
-    const learningRef = ref(storage, `learning-audios/${userId}/${learningId}/${fileName}`);
+    const learningRef = createRef(storage, `learning-audios/${userId}/${learningId}/${fileName}`);
     
     const metadata = {
       contentType: file.type,
@@ -166,7 +157,7 @@ export class StorageService {
 
     try {
       const snapshot = await uploadBytes(learningRef, file, metadata);
-      return await getDownloadURL(snapshot.ref);
+      return await createGetDownloadURL(snapshot.ref);
     } catch (error) {
       console.error('Failed to upload learning audio:', error);
       throw error;
@@ -180,7 +171,9 @@ export class StorageService {
     audioBlob: Blob,
     fileName: string
   ): Promise<string> {
-    const processedRef = ref(storage, `audios/${userId}/${audioId}/processed_${fileName}`);
+    console.log('📤 Storage: Saving processed audio for user:', userId);
+
+    const processedRef = createRef(storage, `audios/${userId}/${audioId}/processed_${fileName}`);
     
     const metadata = {
       contentType: 'audio/wav',
@@ -193,7 +186,7 @@ export class StorageService {
 
     try {
       const snapshot = await uploadBytes(processedRef, audioBlob, metadata);
-      return await getDownloadURL(snapshot.ref);
+      return await createGetDownloadURL(snapshot.ref);
     } catch (error) {
       console.error('Failed to save processed audio:', error);
       throw error;
@@ -207,7 +200,9 @@ export class StorageService {
     chunkId: string,
     chunkBlob: Blob
   ): Promise<string> {
-    const chunkRef = ref(storage, `chunks/${userId}/${audioId}/${chunkId}.wav`);
+    console.log('📤 Storage: Saving chunk for user:', userId);
+
+    const chunkRef = createRef(storage, `chunks/${userId}/${audioId}/${chunkId}.wav`);
     
     const metadata = {
       contentType: 'audio/wav',
@@ -220,7 +215,7 @@ export class StorageService {
 
     try {
       const snapshot = await uploadBytes(chunkRef, chunkBlob, metadata);
-      return await getDownloadURL(snapshot.ref);
+      return await createGetDownloadURL(snapshot.ref);
     } catch (error) {
       console.error('Failed to save chunk:', error);
       throw error;
@@ -229,9 +224,11 @@ export class StorageService {
 
   // ファイルのダウンロードURL取得
   async getDownloadURL(filePath: string): Promise<string> {
+    console.log('📤 Storage: Getting download URL for:', filePath);
+
     try {
-      const fileRef = ref(storage, filePath);
-      return await getDownloadURL(fileRef);
+      const fileRef = createRef(storage, filePath);
+      return await createGetDownloadURL(fileRef);
     } catch (error) {
       console.error('Failed to get download URL:', error);
       throw error;
@@ -240,8 +237,10 @@ export class StorageService {
 
   // ファイル削除
   async deleteFile(filePath: string): Promise<void> {
+    console.log('🗑️ Storage: Deleting file:', filePath);
+
     try {
-      const fileRef = ref(storage, filePath);
+      const fileRef = createRef(storage, filePath);
       await deleteObject(fileRef);
     } catch (error) {
       console.error('Failed to delete file:', error);
@@ -251,9 +250,11 @@ export class StorageService {
 
   // 音声ファイル関連のすべてのファイルを削除
   async deleteAudioFiles(userId: string, audioId: string): Promise<void> {
+    console.log('🗑️ Storage: Deleting audio files for user:', userId);
+
     try {
-      const audioFolderRef = ref(storage, `audios/${userId}/${audioId}/`);
-      const chunkFolderRef = ref(storage, `chunks/${userId}/${audioId}/`);
+      const audioFolderRef = createRef(storage, `audios/${userId}/${audioId}/`);
+      const chunkFolderRef = createRef(storage, `chunks/${userId}/${audioId}/`);
       
       // メインフォルダ内のファイルを削除
       const audioList = await listAll(audioFolderRef);
@@ -272,8 +273,10 @@ export class StorageService {
 
   // 学習音声削除
   async deleteLearningAudio(userId: string, learningId: string): Promise<void> {
+    console.log('🗑️ Storage: Deleting learning audio for user:', userId);
+
     try {
-      const learningFolderRef = ref(storage, `learning-audios/${userId}/${learningId}/`);
+      const learningFolderRef = createRef(storage, `learning-audios/${userId}/${learningId}/`);
       const fileList = await listAll(learningFolderRef);
       const deletePromises = fileList.items.map(item => deleteObject(item));
       await Promise.all(deletePromises);
@@ -285,8 +288,10 @@ export class StorageService {
 
   // ファイルのメタデータ取得
   async getFileMetadata(filePath: string): Promise<any> {
+    console.log('📊 Storage: Getting metadata for:', filePath);
+
     try {
-      const fileRef = ref(storage, filePath);
+      const fileRef = createRef(storage, filePath);
       return await getMetadata(fileRef);
     } catch (error) {
       console.error('Failed to get file metadata:', error);
@@ -301,10 +306,12 @@ export class StorageService {
     learningFiles: number;
     chunkFiles: number;
   }> {
+    console.log('📊 Storage: Calculating usage for user:', userId);
+
     try {
-      const audioFolderRef = ref(storage, `audios/${userId}/`);
-      const learningFolderRef = ref(storage, `learning-audios/${userId}/`);
-      const chunkFolderRef = ref(storage, `chunks/${userId}/`);
+      const audioFolderRef = createRef(storage, `audios/${userId}/`);
+      const learningFolderRef = createRef(storage, `learning-audios/${userId}/`);
+      const chunkFolderRef = createRef(storage, `chunks/${userId}/`);
       
       const [audioList, learningList, chunkList] = await Promise.all([
         listAll(audioFolderRef),
@@ -343,11 +350,13 @@ export class StorageService {
 
   // 古いファイルのクリーンアップ（30日経過）
   async cleanupOldFiles(userId: string, daysOld: number = 30): Promise<void> {
+    console.log('🧹 Storage: Cleaning up old files for user:', userId);
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
     
     try {
-      const audioFolderRef = ref(storage, `audios/${userId}/`);
+      const audioFolderRef = createRef(storage, `audios/${userId}/`);
       const audioList = await listAll(audioFolderRef);
       
       const deletePromises = audioList.items.map(async (item) => {

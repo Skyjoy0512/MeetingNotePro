@@ -22,7 +22,7 @@ export const isDemo = !process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
 // API エンドポイント
 export const apiEndpoints = {
   audioProcessor: process.env.NEXT_PUBLIC_AUDIO_PROCESSOR_URL || 
-                 (isDev ? 'http://localhost:8080' : 'https://voicenote-processor-asia-northeast1.run.app'),
+                 (isDev ? '' : 'https://voicenote-audio-processor-189229317369.asia-northeast1.run.app'),
 };
 
 // 音声処理制限

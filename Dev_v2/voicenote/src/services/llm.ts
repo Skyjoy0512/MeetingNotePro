@@ -49,7 +49,7 @@ export class LLMService {
 
       // 実際のLLM API呼び出し（実装時に追加）
       const context = this.buildContext(audioFile);
-      const response = await this.callLLMAPI(question, context);
+      const response = await this.callLLMAPI(question, context, userId);
       
       return response;
     } catch (error) {
@@ -99,18 +99,51 @@ export class LLMService {
     return context;
   }
 
-  // 実際のLLM API呼び出し（プレースホルダー）
-  private async callLLMAPI(question: string, context: string): Promise<AskAIResponse> {
-    // TODO: 実際のLLM API（OpenAI, Anthropic, Google等）との統合
-    console.log('🤖 LLM API call:', { question, contextLength: context.length });
-    
-    // 現在はダミーレスポンス
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    return {
-      answer: '申し訳ございませんが、現在LLM APIが設定されていません。API設定ページでLLMプロバイダーとAPIキーを設定してください。',
-      confidence: 0.0
-    };
+  // 実際のLLM API呼び出し（Firebase Functions経由）
+  private async callLLMAPI(question: string, context: string, userId?: string): Promise<AskAIResponse> {
+    try {
+      console.log('🤖 LLM API call via Firebase Functions:', { question, contextLength: context.length });
+      
+      // Firebase Functions のaskAIエンドポイントを呼び出し
+      const response = await fetch('https://us-central1-voicenote-dev.cloudfunctions.net/askAI', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question,
+          context,
+          user_id: userId || 'anonymous',
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ask AI API failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      return {
+        answer: result.answer || 'AI応答を取得できませんでした',
+        sources: result.sources || ['音声コンテンツ'],
+        confidence: result.confidence || 0.8
+      };
+    } catch (error) {
+      console.error('LLM API call failed:', error);
+      
+      // フォールバック: 基本的な応答を生成
+      return {
+        answer: `申し訳ございませんが、AI応答の生成中にエラーが発生しました。
+
+質問内容: ${question}
+
+利用可能な情報:
+${context.substring(0, 500)}...
+
+設定でAPIキーが正しく設定されているか確認してください。`,
+        confidence: 0.2
+      };
+    }
   }
 
   // デモ用の回答生成
@@ -220,7 +253,7 @@ ${speakers.map((speaker, index) =>
 
       // 実際の実装ではチャット履歴も含めてコンテキストを構築
       const context = this.buildContextWithHistory(audioFile, chatHistory);
-      const response = await this.callLLMAPI(question, context);
+      const response = await this.callLLMAPI(question, context, userId);
       
       return response;
     } catch (error) {

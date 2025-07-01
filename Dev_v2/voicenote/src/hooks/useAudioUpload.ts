@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { storageService } from '@/services/storage';
 import { databaseService } from '@/services/database';
+import { audioProcessingService } from '@/services/audioProcessing';
 import { validateAudioFile } from '@/lib/utils';
 import { AudioFile } from '@/types';
 
@@ -23,12 +24,19 @@ export const useAudioUpload = (userId: string) => {
 
   const uploadFile = useCallback(async (file: File): Promise<AudioFile | null> => {
     try {
+      console.log('🚀 Upload started for file:', file.name, 'size:', file.size, 'type:', file.type);
+      
       if (!file) {
         throw new Error('ファイルが選択されていません');
       }
 
+      if (!userId) {
+        throw new Error('ユーザーが認証されていません');
+      }
+
       // ファイル検証
       const validation = validateAudioFile(file);
+      console.log('📋 File validation result:', validation);
       
       if (!validation.valid) {
         const errorMsg = validation.error || '無効なファイルです';
@@ -43,43 +51,10 @@ export const useAudioUpload = (userId: string) => {
         uploadedFile: null
       });
 
-      // デモモードの場合はシンプルなモックアップロード
-      if (userId === 'demo-user-123') {
-        // アップロード進捗をシミュレート
-        for (let i = 0; i <= 100; i += 20) {
-          setUploadState(prev => ({ ...prev, progress: i }));
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-        
-        // デモ用のファイル情報を作成
-        const demoFile: AudioFile = {
-          id: `demo-upload-${Date.now()}`,
-          userId: 'demo-user-123',
-          fileName: file.name,
-          fileUrl: `/demo/uploads/${file.name}`, // 安全なダミーURL
-          duration: Math.floor(Math.random() * 3600) + 300, // 5分-1時間のランダム
-          status: 'uploaded',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          audioQuality: {
-            snr: 25,
-            noiseLevel: 0.1,
-            volumeLevel: 0.8,
-            format: file.name.split('.').pop() || 'unknown',
-            sampleRate: 44100,
-            channels: 2
-          }
-        };
+      console.log('👤 Current user ID:', userId);
 
-        setUploadState({
-          isUploading: false,
-          progress: 100,
-          error: null,
-          uploadedFile: demoFile
-        });
-
-        return demoFile;
-      }
+      // 本番Firebase実装を使用（デモモード削除）
+      console.log('📤 Real Firebase upload for user:', userId);
       
       console.log('💾 Creating audio file record in database...');
       
@@ -132,6 +107,9 @@ export const useAudioUpload = (userId: string) => {
         error: null,
         uploadedFile
       });
+
+      // アップロード完了後は自動処理を開始しない（ユーザーが手動で開始）
+      console.log('✅ Upload completed. Ready for manual processing start.');
 
       return uploadedFile;
     } catch (error) {

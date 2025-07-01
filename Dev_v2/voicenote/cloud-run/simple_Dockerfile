@@ -1,0 +1,28 @@
+# Python 3.11ベースイメージ
+FROM python:3.11-slim
+
+# システム依存関係のインストール
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 作業ディレクトリの設定
+WORKDIR /app
+
+# Python依存関係のインストール
+COPY simple_requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションコードのコピー
+COPY simple_main.py main.py
+
+# 環境変数の設定
+ENV PYTHONPATH=/app
+ENV PORT=8080
+
+# ポート公開
+EXPOSE 8080
+
+# アプリケーション実行
+CMD ["python", "main.py"]

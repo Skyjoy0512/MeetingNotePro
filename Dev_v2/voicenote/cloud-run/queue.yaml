@@ -1,0 +1,33 @@
+queue:
+- name: audio-processing
+  rate: 5/s
+  bucket_size: 10
+  max_concurrent_requests: 3
+  retry_parameters:
+    task_retry_limit: 3
+    task_age_limit: 24h
+    min_backoff: 1s
+    max_backoff: 600s
+    max_doublings: 5
+
+- name: chunk-processing
+  rate: 10/s  
+  bucket_size: 20
+  max_concurrent_requests: 5
+  retry_parameters:
+    task_retry_limit: 5
+    task_age_limit: 12h
+    min_backoff: 2s
+    max_backoff: 300s
+    max_doublings: 4
+
+- name: transcription-tasks
+  rate: 15/s
+  bucket_size: 30
+  max_concurrent_requests: 10
+  retry_parameters:
+    task_retry_limit: 3
+    task_age_limit: 6h
+    min_backoff: 1s
+    max_backoff: 120s
+    max_doublings: 3

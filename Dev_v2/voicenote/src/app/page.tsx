@@ -64,58 +64,124 @@ const mockAudioFiles: AudioFile[] = [
 ];
 
 export default function HomePage() {
-  console.log('🏠 Home: Component initialized');
+  console.log('🚀 HomePage v4.0: FORCE CACHE CLEAR - ' + Date.now() + ' - BUILD:' + process.env.NODE_ENV);
   
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
 
-  // 実際のFirestoreからデータを取得する関数
-  const loadAudioFiles = useCallback(async (isRefresh = false) => {
-    console.log('🔄 loadAudioFiles called', { userUid: user?.uid, isRefresh, mounted });
-    
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
 
-    // 常にデモデータを使用（シンプル化）
-    console.log('🎭 Setting demo data');
-    setAudioFiles(mockAudioFiles);
-    
-    // 短い遅延でローディング状態を解除
-    setTimeout(() => {
-      setLoading(false);
-      setRefreshing(false);
-    }, 100);
-  }, [user?.uid]);
-
-  // マウント時の初期化
+  // データ読み込み処理
   useEffect(() => {
-    setMounted(true);
-    console.log('🏠 Home: Component mounted, loading initial data');
+    let isMounted = true;
+    
+    const loadAudioFiles = async () => {
+      // 認証中またはユーザーがいない場合はスキップ
+      if (authLoading || !user?.uid) {
+        console.log('🔄 HomePage: Skipping load - authLoading or no user', { authLoading, userId: user?.uid });
+        return;
+      }
+      
+      // すでにデータが読み込まれている場合はスキップ
+      if (dataLoaded) {
+        console.log('🔄 HomePage: Data already loaded, skipping');
+        return;
+      }
+      
+      try {
+        console.log('📊 HomePage: Loading audio files for user:', user.uid);
+        setLoading(true);
+        
+        const files = await databaseService.getAudioFiles(user.uid);
+        
+        if (!isMounted) return; // コンポーネントがアンマウントされている場合は処理を中止
+        
+        console.log('✅ HomePage: Loaded', files.length, 'audio files');
+        
+        // 本番データを使用（デモモード削除）
+        setAudioFiles(files);
+        
+        setDataLoaded(true);
+        
+      } catch (error) {
+        if (!isMounted) return;
+        
+        console.error('❌ HomePage: Failed to load audio files:', error);
+        toast({
+          title: 'エラー',
+          description: '音声ファイルの読み込みに失敗しました',
+          variant: 'destructive',
+        });
+        
+        // エラー時は空配列
+        setAudioFiles([]);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
     loadAudioFiles();
-  }, []);
+    
+    // クリーンアップ関数
+    return () => {
+      isMounted = false;
+    };
+  }, [authLoading, user?.uid, dataLoaded]);
 
   // プルダウンリフレッシュ
-  const handleRefresh = useCallback(() => {
-    console.log('🔄 Refresh triggered');
-    loadAudioFiles(true);
-  }, [loadAudioFiles]);
+  const handleRefresh = useCallback(async () => {
+    console.log('🔄 HomePage: Manual refresh triggered');
+    
+    if (!user?.uid) {
+      console.log('🔄 HomePage: No user for refresh');
+      return;
+    }
+    
+    try {
+      setRefreshing(true);
+      setDataLoaded(false); // データを再読み込みできるようにリセット
+      
+      const files = await databaseService.getAudioFiles(user.uid);
+      console.log('🔄 HomePage: Refresh loaded', files.length, 'files');
+      
+      setAudioFiles(files);
+      
+      setDataLoaded(true);
+      
+    } catch (error) {
+      console.error('❌ HomePage: Refresh failed:', error);
+      toast({
+        title: 'エラー',
+        description: '音声ファイルの更新に失敗しました',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user?.uid]);
 
   // ファイル削除
   const handleDeleteFile = useCallback(async (audioId: string) => {
     console.log('🗑️ Delete file:', audioId);
     
+    if (!user?.uid) {
+      console.error('❌ No user for delete operation');
+      return;
+    }
+    
     try {
-      // デモモードでは配列から削除するだけ
+      // 実際のデータベースから削除
+      await databaseService.deleteAudioFile(user.uid, audioId);
+      
+      // UIから即座に削除
       setAudioFiles(prev => prev.filter(file => file.id !== audioId));
       
       toast({
@@ -130,29 +196,47 @@ export default function HomePage() {
         variant: 'destructive',
       });
     }
-  }, [toast]);
+  }, [user?.uid]);
 
   // ファイルアップロード成功時のコールバック
   const handleUploadSuccess = useCallback((file: AudioFile) => {
-    console.log('📤 Upload success:', file);
+    console.log('📤 HomePage: Upload success:', file);
+    
+    // 即座にUIを更新
     setAudioFiles(prev => [file, ...prev]);
     setUploadDialogOpen(false);
+    
     toast({
       title: 'アップロード完了',
       description: `${file.fileName} のアップロードが完了しました`,
     });
-  }, [toast]);
+    
+    // バックグラウンドでリフレッシュ（UI更新は既に完了しているので、重複更新を避ける）
+    setTimeout(() => {
+      setDataLoaded(false);
+    }, 1000);
+    
+  }, []);
 
   // 録音完了時のコールバック
   const handleRecordingComplete = useCallback((file: AudioFile) => {
-    console.log('🎤 Recording complete:', file);
+    console.log('🎤 HomePage: Recording complete:', file);
+    
+    // 即座にUIを更新
     setAudioFiles(prev => [file, ...prev]);
     setRecordDialogOpen(false);
+    
     toast({
       title: '録音完了',
       description: `${file.fileName} の録音が完了しました`,
     });
-  }, [toast]);
+    
+    // バックグラウンドでリフレッシュ
+    setTimeout(() => {
+      setDataLoaded(false);
+    }, 1000);
+    
+  }, []);
 
   const handleFileClick = (file: AudioFile) => {
     console.log('📁 File clicked:', {
@@ -174,12 +258,12 @@ export default function HomePage() {
     window.location.href = url;
   };
 
-  console.log('🏠 Home: Current state', {
+  console.log('🏠 HomePage: Current state', {
     authLoading,
     user: user ? { uid: user.uid } : null,
     audioFilesCount: audioFiles.length,
     loading,
-    mounted
+    dataLoaded
   });
 
   return (
@@ -187,53 +271,7 @@ export default function HomePage() {
       <MobileHeader 
         title="VoiceNote" 
         showSettings={true}
-        rightAction={
-          <div className="flex space-x-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="p-2"
-              onClick={handleRefresh}
-              disabled={refreshing}
-            >
-              <Upload className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </Button>
-            
-            <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="p-2">
-                  <Upload className="h-5 w-5" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>音声ファイルをアップロード</DialogTitle>
-                </DialogHeader>
-                <AudioUpload 
-                  onUploadSuccess={handleUploadSuccess}
-                  onClose={() => setUploadDialogOpen(false)}
-                />
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={recordDialogOpen} onOpenChange={setRecordDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="p-2">
-                  <Mic className="h-5 w-5" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>音声を録音</DialogTitle>
-                </DialogHeader>
-                <AudioRecording 
-                  onRecordingComplete={handleRecordingComplete}
-                  onClose={() => setRecordDialogOpen(false)}
-                />
-              </DialogContent>
-            </Dialog>
-          </div>
-        }
+        rightAction={null}
       />
       
       <main className="pt-14 px-4 pb-4">
@@ -310,6 +348,26 @@ export default function HomePage() {
       </main>
       
       <BottomNavigation />
+
+      {/* アップロードダイアログ */}
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>音声ファイルをアップロード</DialogTitle>
+          </DialogHeader>
+          <AudioUpload onSuccess={handleUploadSuccess} />
+        </DialogContent>  
+      </Dialog>
+
+      {/* 録音ダイアログ */}
+      <Dialog open={recordDialogOpen} onOpenChange={setRecordDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>音声を録音</DialogTitle>
+          </DialogHeader>
+          <AudioRecording onComplete={handleRecordingComplete} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

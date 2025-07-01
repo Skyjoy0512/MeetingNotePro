@@ -132,7 +132,7 @@ export const AudioFileListItem = ({
                   <Clock className="h-3 w-3 mr-1" />
                   {formatDuration(audioFile.duration)}
                 </div>
-                {audioFile.transcription && (
+                {audioFile.transcription && audioFile.transcription.speakers && Array.isArray(audioFile.transcription.speakers) && audioFile.transcription.speakers.length > 0 && (
                   <div className="flex items-center">
                     <Users className="h-3 w-3 mr-1" />
                     {audioFile.transcription.speakers.length}名
@@ -181,7 +181,7 @@ export const AudioFileListItem = ({
 
           {hasError && (
             <div className="text-sm text-red-600 bg-red-50 p-2 rounded mt-2">
-              処理中にエラーが発生しました
+              処理中にエラーが発生しました（クリックして詳細表示・再試行）
             </div>
           )}
 

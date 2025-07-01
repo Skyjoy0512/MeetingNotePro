@@ -24,6 +24,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { databaseService } from '@/services/database';
+import { audioProcessingService } from '@/services/audioProcessing';
 import { AudioFile } from '@/types';
 import { formatDuration, formatFileSize } from '@/lib/utils';
 import { AskAI } from '@/components/audio/AskAI';
@@ -38,10 +39,15 @@ export default function AudioDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('transcript');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   
   const audioId = searchParams?.get('id');
 
   useEffect(() => {
+    console.log('🔍 AudioDetail useEffect:', { audioId, userId: user?.uid });
+    
     if (!audioId || !user?.uid) {
       setError('音声ファイルが見つかりません');
       setLoading(false);
@@ -52,25 +58,42 @@ export default function AudioDetailPage() {
   }, [audioId, user?.uid]);
 
   const loadAudioFile = async () => {
-    if (!audioId || !user?.uid) return;
+    if (!audioId || !user?.uid) {
+      console.log('❌ Missing audioId or user.uid:', { audioId, userId: user?.uid });
+      return;
+    }
     
     try {
       setLoading(true);
       setError(null);
       
-      console.log('🔍 Loading audio file:', audioId);
+      console.log('🔍 Loading audio file:', { audioId, userId: user.uid });
       const file = await databaseService.getAudioFile(user.uid, audioId);
       
       if (!file) {
+        console.log('❌ Audio file not found in database');
         setError('音声ファイルが見つかりません');
         return;
       }
       
-      console.log('✅ Audio file loaded:', file);
+      console.log('✅ Audio file loaded:', {
+        id: file.id,
+        fileName: file.fileName,
+        status: file.status,
+        hasTranscription: !!file.transcription,
+        hasSummary: !!file.summary
+      });
       setAudioFile(file);
     } catch (err) {
       console.error('❌ Failed to load audio file:', err);
-      setError('音声ファイルの読み込みに失敗しました');
+      setError(`音声ファイルの読み込みに失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
+      // エラーの詳細をtoastで表示
+      toast({
+        title: 'エラー',
+        description: `音声ファイルの読み込みに失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        variant: 'destructive'
+      });
     } finally {
       setLoading(false);
     }
@@ -78,6 +101,156 @@ export default function AudioDetailPage() {
 
   const handleBack = () => {
     router.back();
+  };
+
+  // 音声処理開始・再処理
+  const handleStartProcessing = async () => {
+    if (!audioFile || !user?.uid) return;
+    
+    try {
+      setIsProcessing(true);
+      setProcessingStatus('処理を開始しています...');
+      
+      // エラー状態または完了状態の場合はステータスをリセット
+      if (audioFile.status === 'error' || audioFile.status === 'completed') {
+        setAudioFile(prev => prev ? {
+          ...prev,
+          status: 'uploaded',
+          processingProgress: 0,
+          transcription: undefined,
+          summary: undefined
+        } : null);
+      }
+      
+      const actionText = audioFile.status === 'completed' ? '音声の再処理' : '音声の文字起こしと要約';
+      
+      toast({
+        title: audioFile.status === 'completed' ? '再処理開始' : '処理開始',
+        description: `${actionText}を開始しました`,
+      });
+
+      // 音声処理を開始（デモモード）
+      await audioProcessingService.processAudio(
+        user.uid,
+        audioFile.id,
+        {
+          enableSpeakerSeparation: true,
+          maxSpeakers: 5,
+          useUserEmbedding: true,
+          language: 'ja'
+        },
+        (progress) => {
+          setProcessingStatus(`${progress.stage}: ${progress.message || ''} (${progress.progress}%)`);
+          
+          // ファイル情報を更新
+          setAudioFile(prev => prev ? {
+            ...prev,
+            status: progress.stage as any,
+            processingProgress: progress.progress,
+            totalChunks: progress.totalChunks,
+            processedChunks: progress.currentChunk
+          } : null);
+        }
+      );
+
+      // 処理完了後にファイル情報を再読み込み
+      await loadAudioFile();
+      
+      toast({
+        title: '処理完了',
+        description: `${actionText}が完了しました`,
+      });
+      
+    } catch (error) {
+      console.error('❌ Processing failed:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : '音声処理に失敗しました';
+      
+      // ファイル状態をエラーに更新
+      setAudioFile(prev => prev ? {
+        ...prev,
+        status: 'error',
+        processingProgress: 0
+      } : null);
+      
+      toast({
+        title: 'エラー',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
+  // 要約生成開始
+  const handleStartSummary = async () => {
+    if (!audioFile || !user?.uid) return;
+    
+    try {
+      setIsGeneratingSummary(true);
+      
+      // API設定を取得
+      const apiConfig = await databaseService.getAPIConfig(user.uid);
+      if (!apiConfig?.llmApiKey) {
+        toast({
+          title: 'エラー',
+          description: 'LLM APIキーが設定されていません。設定ページでAPIキーを設定してください。',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      toast({
+        title: '要約生成開始',
+        description: '文字起こし結果から要約を生成中です...',
+      });
+
+      // 要約生成API呼び出し
+      const response = await fetch('https://us-central1-voicenote-dev.cloudfunctions.net/generateSummary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.uid,
+          audio_id: audioFile.id,
+          config: {
+            llm_api_key: apiConfig.llmApiKey,
+            llm_provider: apiConfig.llmProvider || 'openai'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || '要約生成に失敗しました');
+      }
+
+      const result = await response.json();
+      
+      // ファイル情報を再読み込み
+      await loadAudioFile();
+      
+      toast({
+        title: '要約生成完了',
+        description: '要約が正常に生成されました',
+      });
+      
+    } catch (error) {
+      console.error('❌ Summary generation failed:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : '要約生成に失敗しました';
+      
+      toast({
+        title: 'エラー',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingSummary(false);
+    }
   };
 
   const getStatusColor = (status: AudioFile['status']) => {
@@ -141,6 +314,8 @@ export default function AudioDetailPage() {
   const isProcessingComplete = audioFile.status === 'completed';
   const hasTranscription = audioFile.transcription;
   const hasSummary = audioFile.summary;
+  // 要約タブは文字起こしが完了していれば常に有効にする
+  const summaryTabEnabled = hasTranscription && isProcessingComplete;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -182,7 +357,7 @@ export default function AudioDetailPage() {
                   <Clock className="h-4 w-4" />
                   <span>再生時間: {formatDuration(audioFile.duration)}</span>
                 </div>
-                {hasTranscription && (
+                {hasTranscription && audioFile.transcription!.speakers && Array.isArray(audioFile.transcription!.speakers) && audioFile.transcription!.speakers.length > 0 && (
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4" />
                     <span>話者数: {audioFile.transcription!.speakers.length}名</span>
@@ -208,6 +383,51 @@ export default function AudioDetailPage() {
                     チャンク処理: {audioFile.processedChunks}/{audioFile.totalChunks}
                   </div>
                 )}
+                {processingStatus && (
+                  <div className="text-xs text-blue-600">{processingStatus}</div>
+                )}
+              </div>
+            )}
+
+            {/* 処理開始・再処理ボタン */}
+            {(audioFile.status === 'uploaded' || audioFile.status === 'error' || audioFile.status === 'completed') && !isProcessing && (
+              <div className="space-y-2">
+                <Button 
+                  onClick={handleStartProcessing}
+                  disabled={isProcessing}
+                  className="w-full"
+                  variant={audioFile.status === 'completed' ? 'outline' : 'default'}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      処理中...
+                    </>
+                  ) : audioFile.status === 'error' ? (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      再試行
+                    </>
+                  ) : audioFile.status === 'completed' ? (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      再処理
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      文字起こし・要約を開始
+                    </>
+                  )}
+                </Button>
+                <div className="text-xs text-gray-500 text-center">
+                  {audioFile.status === 'error' 
+                    ? 'API設定を確認してから再試行してください'
+                    : audioFile.status === 'completed'
+                    ? '別のAPIプロバイダーや設定で再処理できます'
+                    : '処理には数分かかる場合があります'
+                  }
+                </div>
               </div>
             )}
           </CardContent>
@@ -219,7 +439,7 @@ export default function AudioDetailPage() {
             <TabsTrigger value="transcript" disabled={!hasTranscription}>
               文字起こし
             </TabsTrigger>
-            <TabsTrigger value="summary" disabled={!hasSummary}>
+            <TabsTrigger value="summary" disabled={!summaryTabEnabled}>
               要約
             </TabsTrigger>
             <TabsTrigger value="askai" disabled={!isProcessingComplete}>
@@ -237,17 +457,19 @@ export default function AudioDetailPage() {
                 <CardContent>
                   <ScrollArea className="h-96 w-full">
                     <div className="space-y-4">
-                      {audioFile.transcription!.segments?.map((segment, index) => (
-                        <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="outline">{segment.speaker}</Badge>
-                            <span className="text-sm text-gray-500">
-                              {formatDuration(segment.start)} - {formatDuration(segment.end)}
-                            </span>
+                      {audioFile.transcription!.segments && Array.isArray(audioFile.transcription!.segments) && audioFile.transcription!.segments.length > 0 ? (
+                        audioFile.transcription!.segments.map((segment, index) => (
+                          <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline">{segment.speaker}</Badge>
+                              <span className="text-sm text-gray-500">
+                                {formatDuration(segment.start)} - {formatDuration(segment.end)}
+                              </span>
+                            </div>
+                            <div className="text-gray-900">{segment.text}</div>
                           </div>
-                          <div className="text-gray-900">{segment.text}</div>
-                        </div>
-                      )) || (
+                        ))
+                      ) : (
                         <div className="text-center py-8">
                           <div className="text-gray-500">
                             セグメント情報がありません
@@ -323,16 +545,77 @@ export default function AudioDetailPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* 要約再生成ボタン */}
+                <Card>
+                  <CardContent className="text-center py-4">
+                    <Button 
+                      onClick={handleStartSummary}
+                      disabled={isGeneratingSummary}
+                      variant="outline"
+                      className="mt-2"
+                    >
+                      {isGeneratingSummary ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          要約生成中...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4 mr-2" />
+                          要約を再生成
+                        </>
+                      )}
+                    </Button>
+                    <div className="text-xs text-gray-500 mt-2">
+                      別のAPIプロバイダーや設定で要約を再生成できます
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             ) : (
               <Card>
-                <CardContent className="text-center py-8">
+                <CardContent className="text-center py-8 space-y-4">
                   <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <div className="text-gray-500">
-                    {audioFile.status === 'completed' 
-                      ? '要約結果がありません' 
-                      : '要約生成中です'}
+                    {audioFile.summaryStatus === 'generating' 
+                      ? '要約生成中です...'
+                      : audioFile.summaryStatus === 'error'
+                      ? '要約生成でエラーが発生しました'
+                      : '要約を生成できます'}
                   </div>
+                  
+                  {/* 要約開始ボタン */}
+                  {audioFile.status === 'completed' && hasTranscription && (
+                    <Button 
+                      onClick={handleStartSummary}
+                      disabled={isGeneratingSummary}
+                      className="mt-4"
+                    >
+                      {isGeneratingSummary ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          要約生成中...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4 mr-2" />
+                          要約を生成
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  
+                  {/* 要約生成進捗 */}
+                  {audioFile.summaryStatus === 'generating' && audioFile.summaryProgress !== undefined && (
+                    <div className="space-y-2 mt-4">
+                      <div className="flex justify-between text-sm">
+                        <span>要約生成進捗</span>
+                        <span>{Math.round(audioFile.summaryProgress)}%</span>
+                      </div>
+                      <Progress value={audioFile.summaryProgress} className="h-2" />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

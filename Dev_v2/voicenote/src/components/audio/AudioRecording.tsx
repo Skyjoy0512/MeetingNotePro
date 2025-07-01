@@ -19,7 +19,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatDuration } from '@/lib/utils';
 
 interface AudioRecordingProps {
-  onRecordingComplete?: (audioId: string) => void;
+  onRecordingComplete?: (file: any) => void;
   onError?: (error: string) => void;
 }
 

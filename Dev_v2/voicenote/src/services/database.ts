@@ -246,12 +246,29 @@ export class DatabaseService {
         match: doc.id === data.id
       });
       
-      return {
+      const audioFile = {
         ...data,
         id: doc.id, // Document IDを確実に使用
         createdAt: data.createdAt.toDate(),
         updatedAt: data.updatedAt.toDate()
       };
+
+      // データ構造の安全性チェック
+      if (audioFile.transcription && audioFile.transcription.speakers && !Array.isArray(audioFile.transcription.speakers)) {
+        console.warn('🚨 Invalid speakers data type:', typeof audioFile.transcription.speakers, audioFile.transcription.speakers);
+        audioFile.transcription.speakers = [];
+      }
+
+      console.log('🗂️ Audio file data check:', {
+        id: audioFile.id,
+        hasTranscription: !!audioFile.transcription,
+        hasSpeakers: !!audioFile.transcription?.speakers,
+        speakersType: typeof audioFile.transcription?.speakers,
+        speakersIsArray: Array.isArray(audioFile.transcription?.speakers),
+        speakersLength: audioFile.transcription?.speakers?.length
+      });
+
+      return audioFile;
     }) as AudioFile[];
     
     console.log('🗂️ Processed files:', files.map(f => ({ id: f.id, fileName: f.fileName })));
@@ -588,60 +605,40 @@ export class DatabaseService {
   }
 
   // API設定関連
+  async getAPIConfig(userId: string): Promise<ApiSettings | null> {
+    return await this.getApiSettings(userId);
+  }
+
+  async saveAPIConfig(userId: string, settings: ApiSettings): Promise<void> {
+    return await this.saveApiSettings(userId, settings);
+  }
+
   async saveApiSettings(userId: string, settings: ApiSettings): Promise<void> {
-    // デモモード用の簡易保存（ローカルストレージ）
-    if (userId === 'demo-user-123') {
-      console.log('🎭 Database: Demo saveApiSettings called', settings);
-      localStorage.setItem('demo-api-settings', JSON.stringify(settings));
-      return;
-    }
+    console.log('💾 Database: Saving API settings for user:', userId);
     
     const settingsRef = doc(db, 'apiConfigs', userId);
     await setDoc(settingsRef, {
       ...settings,
-      updatedAt: Timestamp.fromDate(settings.updatedAt)
+      updatedAt: Timestamp.fromDate(settings.updatedAt || new Date())
     });
   }
 
   async getApiSettings(userId: string): Promise<ApiSettings | null> {
-    // デモモード用の簡易取得（ローカルストレージ）
-    if (userId === 'demo-user-123') {
-      console.log('🎭 Database: Demo getApiSettings called');
-      const stored = localStorage.getItem('demo-api-settings');
-      if (stored) {
-        const settings = JSON.parse(stored);
-        return {
-          ...settings,
-          updatedAt: new Date(settings.updatedAt)
-        } as ApiSettings;
-      }
-      
-      // デフォルト設定を返す
-      return {
-        speechProvider: 'openai',
-        speechApiKey: '',
-        speechModel: 'whisper-1',
-        speechSettings: {},
-        llmProvider: 'openai',
-        llmApiKey: '',
-        llmModel: 'gpt-4',
-        llmSettings: {},
-        fallbackConfigs: [],
-        updatedAt: new Date()
-      } as ApiSettings;
-    }
+    console.log('🔍 Database: Getting API settings for user:', userId);
     
     const settingsRef = doc(db, 'apiConfigs', userId);
     const settingsSnap = await getDoc(settingsRef);
     
     if (settingsSnap.exists()) {
       const data = settingsSnap.data();
+      console.log('✅ Database: API settings found');
       return {
         ...data,
         updatedAt: data.updatedAt.toDate()
       } as ApiSettings;
     }
     
+    console.log('⚠️ Database: No API settings found');
     return null;
   }
 

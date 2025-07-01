@@ -2,6 +2,7 @@ import { AudioFile, TranscriptionResult, SummaryResult, SpeakerSegment } from '@
 import { databaseService } from './database';
 import { storageService } from './storage';
 import { audioProcessingClient, ProcessingConfig } from './audioProcessingClient';
+import { directApiProcessingService } from './directApiProcessing';
 
 export interface ProcessingOptions {
   enableSpeakerSeparation?: boolean;
@@ -36,35 +37,74 @@ export class AudioProcessingService {
     onProgress?: (progress: ProcessingProgress) => void
   ): Promise<AudioFile> {
     try {
-      // 処理設定の変換
-      const config: ProcessingConfig = {
-        enableSpeakerSeparation: options.enableSpeakerSeparation ?? true,
-        maxSpeakers: options.maxSpeakers ?? 5,
-        useUserEmbedding: options.useUserEmbedding ?? true,
-        language: options.language ?? 'ja',
-        chunkDuration: 30,
-        overlapDuration: 5
-      };
-
-      // Cloud Runサービスに処理を委託
-      const response = await audioProcessingClient.startProcessingWithRetry(
-        userId, 
-        audioId, 
-        config
-      );
-
-      if (response.status !== 'processing_started') {
-        throw new Error(`Failed to start processing: ${response.message}`);
+      console.log('🎯 Starting audio processing for:', audioId);
+      
+      // 処理開始時にファイル状態をリセット（再処理対応）
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'uploaded',
+        processingProgress: 0,
+        updatedAt: new Date()
+      });
+      console.log('🔄 File status reset for reprocessing');
+      
+      // 本番処理を実行（デモモード削除）
+      console.log('🔧 Processing real audio for user:', userId);
+      
+      // API設定を取得して実際の処理を実行
+      const apiConfig = await databaseService.getAPIConfig(userId);
+      if (!apiConfig) {
+        await databaseService.updateAudioFile(userId, audioId, {
+          status: 'error',
+          processingProgress: 0
+        });
+        throw new Error('API設定が見つかりません。設定ページでAPI設定を完了してください。');
       }
-
-      // 進捗監視を開始（オプション）
-      if (onProgress) {
-        this.monitorProgress(userId, audioId, onProgress);
+      
+      console.log('🔍 Retrieved API config:', {
+        speechProvider: apiConfig.speechProvider,
+        speechApiKeyLength: apiConfig.speechApiKey?.length || 0,
+        llmProvider: apiConfig.llmProvider,
+        llmApiKeyLength: apiConfig.llmApiKey?.length || 0,
+        allKeys: Object.keys(apiConfig)
+      });
+      
+      // APIキーが設定されているかチェック
+      if (!apiConfig.speechApiKey || !apiConfig.llmApiKey) {
+        await databaseService.updateAudioFile(userId, audioId, {
+          status: 'error',
+          processingProgress: 0
+        });
+        throw new Error('APIキーが設定されていません。設定ページで音声認識APIとLLM APIの設定を完了してください。');
       }
-
-      // 処理完了まで待機またはすぐに戻る（設定に依存）
-      return await this.waitForCompletion(userId, audioId);
-
+      
+      console.log('🔑 Using configured APIs:', {
+        speechProvider: apiConfig.speechProvider,
+        llmProvider: apiConfig.llmProvider
+      });
+      
+      // Firebase Functions処理を実行
+      try {
+        console.log('🚀 Attempting Firebase Functions processing...');
+        return await this.processAudioWithFirebaseFunctions(userId, audioId, apiConfig, options, onProgress);
+      } catch (functionsError) {
+        console.error('❌ Firebase Functions processing failed:', functionsError);
+        
+        // Firebase Functions が失敗した場合は direct API処理にフォールバック
+        console.log('🔄 Falling back to direct API processing...');
+        try {
+          return await this.processAudioWithDirectAPI(userId, audioId, apiConfig, options, onProgress);
+        } catch (directError) {
+          console.error('❌ Direct API processing also failed:', directError);
+          
+          await databaseService.updateAudioFile(userId, audioId, {
+            status: 'error',
+            processingProgress: 0
+          });
+          
+          throw new Error(`音声処理に失敗しました。\n\n【状況】\n・Firebase Functions: ${functionsError.message}\n・Direct API: ${directError.message}\n\n【対応方法】\n1. API設定を確認してください\n2. APIキーが正しく設定されているか確認してください\n3. ネットワーク接続を確認してください`)
+        }
+      }
+      
     } catch (error) {
       console.error('Audio processing failed:', error);
       
@@ -73,6 +113,275 @@ export class AudioProcessingService {
         processingProgress: 0
       });
 
+      throw error;
+    }
+  }
+
+  // Firebase Functions を使用した処理
+  private async processAudioWithFirebaseFunctions(
+    userId: string,
+    audioId: string,
+    apiConfig: any,
+    options: ProcessingOptions = {},
+    onProgress?: (progress: ProcessingProgress) => void
+  ): Promise<AudioFile> {
+    console.log('🔄 Processing audio with Firebase Functions');
+    
+    try {
+      onProgress?.({
+        stage: 'preprocessing',
+        progress: 10,
+        message: 'Firebase Functions で処理を開始...'
+      });
+
+      // Firebase Functions にリクエストを送信
+      const functionsUrl = 'https://us-central1-voicenote-dev.cloudfunctions.net/processAudio';
+      const response = await fetch(functionsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          audio_id: audioId,
+          config: {
+            speech_provider: apiConfig.speechProvider,
+            speech_api_key: apiConfig.speechApiKey,
+            speech_model: apiConfig.speechModel,
+            llm_provider: apiConfig.llmProvider,
+            llm_api_key: apiConfig.llmApiKey,
+            llm_model: apiConfig.llmModel
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('📨 Firebase Functions response:', result);
+
+      onProgress?.({
+        stage: 'integrating',
+        progress: 80,
+        message: 'Firebase Functions 処理完了、結果を取得中...'
+      });
+
+      // 処理完了まで待機
+      return await this.waitForCompletion(userId, audioId);
+
+    } catch (error) {
+      console.error('Firebase Functions processing failed:', error);
+      throw error;
+    }
+  }
+
+  // Direct API を使用した処理
+  private async processAudioWithDirectAPI(
+    userId: string,
+    audioId: string,
+    apiConfig: any,
+    options: ProcessingOptions = {},
+    onProgress?: (progress: ProcessingProgress) => void
+  ): Promise<AudioFile> {
+    console.log('🔄 Processing audio with Direct APIs');
+    
+    try {
+      onProgress?.({
+        stage: 'preprocessing',
+        progress: 10,
+        message: 'Direct API で処理を開始...'
+      });
+
+      // Direct API Processing Service を使用
+      return await directApiProcessingService.processAudioDirect(
+        userId,
+        audioId,
+        apiConfig,
+        (progress, message) => {
+          onProgress?.({
+            stage: this.progressToStage(progress),
+            progress,
+            message
+          });
+        }
+      );
+
+    } catch (error) {
+      console.error('Direct API processing failed:', error);
+      throw error;
+    }
+  }
+
+  // デモ処理（実際の文字起こし・要約データを生成）
+  private async processAudioDemo(
+    userId: string,
+    audioId: string,
+    options: ProcessingOptions = {},
+    onProgress?: (progress: ProcessingProgress) => void
+  ): Promise<AudioFile> {
+    console.log('🎭 Starting demo audio processing for:', audioId);
+    
+    try {
+      // Phase 1: 前処理
+      onProgress?.({
+        stage: 'preprocessing',
+        progress: 10,
+        message: 'ノイズ除去処理中...'
+      });
+      
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'preprocessing',
+        processingProgress: 10
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Phase 2: 話者分析
+      onProgress?.({
+        stage: 'speaker_analysis',
+        progress: 30,
+        message: 'グローバル話者分析中...'
+      });
+      
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'speaker_analysis',
+        processingProgress: 30
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Phase 3: 文字起こし
+      onProgress?.({
+        stage: 'transcribing',
+        progress: 60,
+        message: '音声認識処理中...'
+      });
+      
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'transcribing',
+        processingProgress: 60
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 文字起こし結果を生成
+      const transcription = {
+        text: 'これは音声文字起こし結果のデモです。実際の音声認識APIが統合されると、ここに正確な文字起こし結果が表示されます。話者分離により、各発言者の発言を明確に区別することができます。',
+        segments: [
+          {
+            start: 0,
+            end: 5,
+            text: 'こんにちは、今日はお忙しい中お時間をいただきありがとうございます。',
+            speaker: 'Aさん',
+            confidence: 0.95
+          },
+          {
+            start: 5,
+            end: 12,
+            text: 'こちらこそ、よろしくお願いします。早速ですが、今回のプロジェクトについて説明させていただきます。',
+            speaker: 'Bさん',
+            confidence: 0.92
+          },
+          {
+            start: 12,
+            end: 18,
+            text: 'プロジェクトの概要については理解しましたが、スケジュールはどのようになっていますでしょうか？',
+            speaker: 'Cさん',
+            confidence: 0.88
+          },
+          {
+            start: 18,
+            end: 25,
+            text: 'スケジュールについては、来月の第一週から開始予定です。詳細なタイムラインをお送りします。',
+            speaker: 'Aさん',
+            confidence: 0.94
+          }
+        ],
+        speakers: ['Aさん', 'Bさん', 'Cさん'],
+        language: 'ja',
+        confidence: 0.92,
+        processingTime: 3000,
+        apiProvider: 'demo',
+        model: 'whisper-demo'
+      };
+
+      // Phase 4: 要約生成
+      onProgress?.({
+        stage: 'integrating',
+        progress: 85,
+        message: 'AI要約を生成中...'
+      });
+      
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'integrating',
+        processingProgress: 85,
+        transcription
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // 要約結果を生成
+      const summary = {
+        overall: 'この会議では新しいプロジェクトについて議論され、具体的な進行計画と担当者の役割分担が決定されました。参加者間で活発な意見交換が行われ、今後の方向性について合意に至りました。',
+        speakerSummaries: {
+          'Aさん': '会議の司会を務め、プロジェクトの概要説明と進行管理を行った。重要な決定事項について確認を取りながら議論を進めた。',
+          'Bさん': 'プロジェクトの詳細な技術仕様について説明し、実装方法について具体的な提案を行った。',
+          'Cさん': 'スケジュールについて質問を行い、プロジェクトの実現可能性について検討した。'
+        },
+        keyPoints: [
+          'プロジェクト開始日は来月の第一週に設定',
+          '詳細な技術仕様について説明が行われた',
+          'スケジュールの詳細なタイムラインの共有が約束された',
+          '各参加者の役割と責任が明確化された'
+        ],
+        actionItems: [
+          '詳細なタイムラインの作成と共有（Aさん担当）',
+          '技術仕様書の最終化（Bさん担当）',
+          'プロジェクト計画の詳細確認（Cさん担当）',
+          '次回会議の日程調整'
+        ],
+        topics: ['プロジェクト計画', 'スケジュール管理', '技術仕様', '役割分担'],
+        apiProvider: 'demo',
+        model: 'gpt-demo',
+        generatedAt: new Date()
+      };
+
+      // Phase 5: 完了
+      onProgress?.({
+        stage: 'integrating',
+        progress: 100,
+        message: '処理完了'
+      });
+
+      // 最終結果をデータベースに保存
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'completed',
+        processingProgress: 100,
+        transcription,
+        summary,
+        updatedAt: new Date()
+      });
+
+      // 更新されたファイル情報を取得
+      const updatedFile = await databaseService.getAudioFile(userId, audioId);
+      if (!updatedFile) {
+        throw new Error('Failed to retrieve updated audio file');
+      }
+
+      console.log('✅ Demo audio processing completed for:', audioId);
+      return updatedFile;
+
+    } catch (error) {
+      console.error('❌ Demo audio processing failed:', error);
+      
+      await databaseService.updateAudioFile(userId, audioId, {
+        status: 'error',
+        processingProgress: 0
+      });
+      
       throw error;
     }
   }
@@ -138,6 +447,15 @@ export class AudioProcessingService {
     };
     
     return stageMap[status] || 'preprocessing';
+  }
+
+  // 進捗パーセンテージをステージにマッピング
+  private progressToStage(progress: number): ProcessingProgress['stage'] {
+    if (progress < 20) return 'preprocessing';
+    if (progress < 40) return 'speaker_analysis';
+    if (progress < 60) return 'transcribing';
+    if (progress < 90) return 'integrating';
+    return 'integrating';
   }
 
   // Phase 0: 音声前処理
@@ -209,10 +527,11 @@ export class AudioProcessingService {
       { start: 25.1, end: 32.0, speaker: 'Speaker_1', confidence: 0.94 }
     ];
 
+    // ユーザーの学習音声データがない場合はAさん、Bさんのラベルを使用
     const globalSpeakers = [
-      { id: 'Speaker_0', name: 'あなた', embedding: [], confidence: 0.88 },
-      { id: 'Speaker_1', name: 'Aさん', embedding: [], confidence: 0.85 },
-      { id: 'Speaker_2', name: 'Bさん', embedding: [], confidence: 0.82 }
+      { id: 'Speaker_0', name: 'Aさん', embedding: [], confidence: 0.88 },
+      { id: 'Speaker_1', name: 'Bさん', embedding: [], confidence: 0.85 },
+      { id: 'Speaker_2', name: 'Cさん', embedding: [], confidence: 0.82 }
     ];
 
     onProgress?.({

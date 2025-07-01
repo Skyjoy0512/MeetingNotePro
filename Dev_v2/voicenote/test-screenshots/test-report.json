@@ -1,0 +1,91 @@
+{
+  "timestamp": "2025-07-01T06:40:56.512Z",
+  "summary": {
+    "total_tests": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "results": {
+    "basicPageLoad": {
+      "success": true,
+      "title": "VoiceNote - AI音声文字起こし・話者分離サービス",
+      "url": "https://voicenote-dev.web.app/"
+    },
+    "responsiveDesign": [
+      {
+        "device": "iPhone SE",
+        "visible": true,
+        "hasHorizontalScroll": false,
+        "success": true
+      },
+      {
+        "device": "iPhone 11",
+        "visible": true,
+        "hasHorizontalScroll": false,
+        "success": true
+      },
+      {
+        "device": "iPad",
+        "visible": true,
+        "hasHorizontalScroll": false,
+        "success": true
+      },
+      {
+        "device": "Desktop",
+        "visible": true,
+        "hasHorizontalScroll": false,
+        "success": true
+      }
+    ],
+    "navigation": [
+      {
+        "name": "録音ページ",
+        "path": "/record",
+        "url": "https://voicenote-dev.web.app/record",
+        "title": "VoiceNote - AI音声文字起こし・話者分離サービス",
+        "hasContent": false,
+        "hasError": false,
+        "success": false
+      },
+      {
+        "name": "API設定ページ",
+        "path": "/settings/api",
+        "url": "https://voicenote-dev.web.app/settings/api",
+        "title": "VoiceNote - AI音声文字起こし・話者分離サービス",
+        "hasContent": false,
+        "hasError": false,
+        "success": false
+      },
+      {
+        "name": "ヘルプページ",
+        "path": "/help",
+        "url": "https://voicenote-dev.web.app/help",
+        "title": "VoiceNote - AI音声文字起こし・話者分離サービス",
+        "hasContent": false,
+        "hasError": false,
+        "success": false
+      },
+      {
+        "name": "プロフィールページ",
+        "path": "/profile",
+        "url": "https://voicenote-dev.web.app/profile",
+        "title": "VoiceNote - AI音声文字起こし・話者分離サービス",
+        "hasContent": false,
+        "hasError": false,
+        "success": false
+      }
+    ],
+    "interactiveElements": {
+      "success": true,
+      "buttons": 3,
+      "links": 0,
+      "inputs": 2
+    },
+    "consoleErrors": {
+      "errors": [],
+      "warnings": [],
+      "success": true
+    }
+  },
+  "screenshots_dir": "./test-screenshots"
+}

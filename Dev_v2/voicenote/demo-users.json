@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "uid": "admin-demo-user",
+      "email": "admin@example.com",
+      "emailVerified": true,
+      "passwordHash": "admin",
+      "salt": "adminSalt",
+      "customClaims": {
+        "role": "admin"
+      },
+      "creationTime": "2025-01-01T00:00:00.000Z",
+      "lastSignInTime": "2025-01-01T00:00:00.000Z",
+      "displayName": "Admin User"
+    }
+  ]
+}

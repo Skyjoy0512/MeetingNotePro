@@ -7,6 +7,15 @@ export interface ProcessingConfig {
   language?: string;
   chunkDuration?: number;
   overlapDuration?: number;
+  // API設定
+  speechProvider?: string;
+  speechApiKey?: string;
+  speechModel?: string;
+  speechSettings?: any;
+  llmProvider?: string;
+  llmApiKey?: string;
+  llmModel?: string;
+  llmSettings?: any;
 }
 
 export interface ProcessingResponse {
@@ -31,11 +40,11 @@ export class AudioProcessingClient {
   private baseUrl: string;
 
   constructor() {
-    // 環境に応じてCloud RunのURLを設定
+    // Firebase Functions URLを使用
     this.baseUrl = process.env.NEXT_PUBLIC_AUDIO_PROCESSOR_URL || 
-                   process.env.NODE_ENV === 'development' ? 
-                   'http://localhost:8080' : 
-                   'https://voicenote-processor-asia-northeast1.run.app';
+                   'https://us-central1-voicenote-dev.cloudfunctions.net/processAudio';
+    
+    console.log('🔧 Audio processor URL configured:', this.baseUrl);
   }
 
   static getInstance(): AudioProcessingClient {
@@ -52,7 +61,12 @@ export class AudioProcessingClient {
     config: ProcessingConfig = {}
   ): Promise<ProcessingResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/process-audio`, {
+      // バックエンドURLが未設定の場合はエラーを投げる
+      if (!this.baseUrl) {
+        throw new Error('Audio processing backend is not configured. Backend deployment is in progress.');
+      }
+      
+      const response = await fetch(`${this.baseUrl}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,7 +80,16 @@ export class AudioProcessingClient {
             use_user_embedding: config.useUserEmbedding ?? true,
             language: config.language ?? 'ja',
             chunk_duration: config.chunkDuration ?? 30,
-            overlap_duration: config.overlapDuration ?? 5
+            overlap_duration: config.overlapDuration ?? 5,
+            // API設定を追加
+            speech_provider: config.speechProvider,
+            speech_api_key: config.speechApiKey,
+            speech_model: config.speechModel,
+            speech_settings: config.speechSettings,
+            llm_provider: config.llmProvider,
+            llm_api_key: config.llmApiKey,
+            llm_model: config.llmModel,
+            llm_settings: config.llmSettings
           }
         })
       });

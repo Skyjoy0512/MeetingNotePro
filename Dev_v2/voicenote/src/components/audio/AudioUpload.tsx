@@ -69,12 +69,11 @@ export const AudioUpload = ({ onUploadSuccess, onClose }: AudioUploadProps) => {
     if (audioFile) {
       const result = await uploadFile(audioFile);
       if (result) {
-        onUploadComplete?.(result.id);
-      } else if (error) {
-        onUploadError?.(error);
+        onUploadSuccess?.(result);
+        onClose?.();
       }
     }
-  }, [uploadFile, error, onUploadComplete, onUploadError]);
+  }, [uploadFile, onUploadSuccess, onClose]);
 
   const handleReset = useCallback(() => {
     reset();

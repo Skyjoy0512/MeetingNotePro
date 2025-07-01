@@ -12,7 +12,11 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
-  }
+  },
+  generateBuildId: async () => {
+    // 強制的にキャッシュを破るためにタイムスタンプを使用
+    return `build-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  },
 };
 
 export default nextConfig;

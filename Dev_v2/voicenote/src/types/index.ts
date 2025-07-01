@@ -1,3 +1,24 @@
+// API設定関連の型定義
+export interface ApiSettings {
+  speechProvider: string;
+  speechApiKey: string;
+  speechModel: string;
+  speechSettings?: Record<string, any>;
+  llmProvider: string;
+  llmApiKey: string;
+  llmModel: string;
+  llmSettings?: Record<string, any>;
+  summaryLlmProvider?: string;
+  summaryLlmModel?: string;
+  fallbackConfigs?: Array<{
+    type: 'speech' | 'llm';
+    provider: string;
+    apiKey: string;
+    model: string;
+  }>;
+  updatedAt: Date;
+}
+
 // 音声ファイル関連の型定義
 export interface AudioFile {
   id: string;
@@ -12,6 +33,9 @@ export interface AudioFile {
   updatedAt: Date;
   transcription?: TranscriptionResult;
   summary?: SummaryResult;
+  summaryStatus?: 'generating' | 'completed' | 'error';
+  summaryProgress?: number;
+  summaryError?: string;
   askAIChats?: ChatMessage[];
   // 長時間音声処理用
   totalChunks?: number;

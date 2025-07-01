@@ -346,8 +346,70 @@ class AudioProcessor:
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """単一チャンクの文字起こし"""
-        # 実装省略（transcription_apis.pyのメソッドを使用）
-        pass
+        try:
+            logger.info(f"Transcribing chunk: {chunk_path}")
+            
+            # API設定取得
+            api_config = config.get("transcription_config")
+            if not api_config:
+                raise ValueError("Transcription API config not found")
+            
+            # チャンク内の話者セグメント取得
+            chunk_segments = speaker_analysis.get("segments", [])
+            
+            # セグメント毎に文字起こし実行
+            transcription_results = []
+            
+            for segment in chunk_segments:
+                try:
+                    # セグメント文字起こし
+                    result = await self.transcription_service.transcribe_segment(
+                        chunk_path,
+                        segment.get("start", 0),
+                        segment.get("end", 0),
+                        api_config
+                    )
+                    
+                    # 話者ラベル付与
+                    result_with_speaker = {
+                        "text": result.text,
+                        "confidence": result.confidence,
+                        "start_time": segment.get("start"),
+                        "end_time": segment.get("end"),
+                        "speaker_id": segment.get("speaker"),
+                        "provider": result.provider,
+                        "word_timestamps": result.word_timestamps
+                    }
+                    
+                    transcription_results.append(result_with_speaker)
+                    
+                except Exception as e:
+                    logger.error(f"Segment transcription failed: {e}")
+                    # エラーセグメントもログに残す
+                    transcription_results.append({
+                        "text": "",
+                        "confidence": 0.0,
+                        "start_time": segment.get("start"),
+                        "end_time": segment.get("end"),
+                        "speaker_id": segment.get("speaker"),
+                        "error": str(e)
+                    })
+            
+            return {
+                "chunk_path": chunk_path,
+                "transcription_results": transcription_results,
+                "speaker_analysis": speaker_analysis,
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            logger.error(f"Chunk transcription failed: {e}")
+            return {
+                "chunk_path": chunk_path,
+                "transcription_results": [],
+                "error": str(e),
+                "status": "failed"
+            }
     
     async def _integrate_chunk_results(
         self,
@@ -355,8 +417,69 @@ class AudioProcessor:
         speaker_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """チャンク結果の統合"""
-        # 実装省略（話者IDの統合、オーバーラップ処理等）
-        pass
+        try:
+            logger.info(f"Integrating {len(chunk_results)} chunk results")
+            
+            # グローバル話者マッピング取得
+            global_speaker_mapping = speaker_analysis.get("global_speaker_mapping", {})
+            
+            # 統合された転写結果
+            integrated_segments = []
+            
+            # チャンク毎の結果を統合
+            for chunk_result in chunk_results:
+                if chunk_result.get("status") != "completed":
+                    logger.warning(f"Skipping failed chunk: {chunk_result.get('error')}")
+                    continue
+                
+                chunk_transcriptions = chunk_result.get("transcription_results", [])
+                
+                for segment in chunk_transcriptions:
+                    # オーバーラップ重複除去チェック
+                    if self._is_duplicate_segment(segment, integrated_segments):
+                        logger.debug(f"Skipping duplicate segment at {segment.get('start_time')}")
+                        continue
+                    
+                    # グローバル話者IDマッピング適用
+                    local_speaker_id = segment.get("speaker_id")
+                    global_speaker_id = global_speaker_mapping.get(
+                        local_speaker_id, local_speaker_id
+                    )
+                    
+                    # 統合セグメント作成
+                    integrated_segment = {
+                        "text": segment.get("text", ""),
+                        "start_time": segment.get("start_time", 0),
+                        "end_time": segment.get("end_time", 0),
+                        "speaker_id": global_speaker_id,
+                        "confidence": segment.get("confidence", 0.0),
+                        "provider": segment.get("provider", "unknown"),
+                        "word_timestamps": segment.get("word_timestamps", [])
+                    }
+                    
+                    integrated_segments.append(integrated_segment)
+            
+            # 時間順でソート
+            integrated_segments.sort(key=lambda x: x.get("start_time", 0))
+            
+            # 話者別統計計算
+            speaker_stats = self._calculate_speaker_statistics(integrated_segments)
+            
+            # 品質統計計算
+            quality_stats = self._calculate_quality_statistics(integrated_segments)
+            
+            return {
+                "segments": integrated_segments,
+                "speaker_statistics": speaker_stats,
+                "quality_statistics": quality_stats,
+                "total_segments": len(integrated_segments),
+                "processing_method": "chunk_integrated",
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            logger.error(f"Chunk results integration failed: {e}")
+            raise
     
     async def _integrate_results(
         self,
@@ -382,6 +505,110 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Result integration failed: {e}")
             raise
+    
+    def _is_duplicate_segment(
+        self, 
+        segment: Dict[str, Any], 
+        existing_segments: List[Dict[str, Any]],
+        overlap_threshold: float = 0.8
+    ) -> bool:
+        """セグメントの重複チェック（オーバーラップ除去用）"""
+        try:
+            segment_start = segment.get("start_time", 0)
+            segment_end = segment.get("end_time", 0)
+            segment_duration = segment_end - segment_start
+            
+            if segment_duration <= 0:
+                return False
+            
+            for existing in existing_segments:
+                existing_start = existing.get("start_time", 0)
+                existing_end = existing.get("end_time", 0)
+                existing_duration = existing_end - existing_start
+                
+                if existing_duration <= 0:
+                    continue
+                
+                # オーバーラップ範囲計算
+                overlap_start = max(segment_start, existing_start)
+                overlap_end = min(segment_end, existing_end)
+                overlap_duration = max(0, overlap_end - overlap_start)
+                
+                # オーバーラップ率計算
+                overlap_ratio = overlap_duration / min(segment_duration, existing_duration)
+                
+                if overlap_ratio >= overlap_threshold:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Duplicate segment check failed: {e}")
+            return False
+    
+    def _calculate_speaker_statistics(
+        self, 
+        segments: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """話者別統計計算"""
+        try:
+            speaker_stats = {}
+            
+            for segment in segments:
+                speaker_id = segment.get("speaker_id", "unknown")
+                duration = segment.get("end_time", 0) - segment.get("start_time", 0)
+                
+                if speaker_id not in speaker_stats:
+                    speaker_stats[speaker_id] = {
+                        "total_duration": 0.0,
+                        "segment_count": 0,
+                        "avg_confidence": 0.0,
+                        "total_confidence": 0.0
+                    }
+                
+                speaker_stats[speaker_id]["total_duration"] += duration
+                speaker_stats[speaker_id]["segment_count"] += 1
+                speaker_stats[speaker_id]["total_confidence"] += segment.get("confidence", 0.0)
+                speaker_stats[speaker_id]["avg_confidence"] = (
+                    speaker_stats[speaker_id]["total_confidence"] / 
+                    speaker_stats[speaker_id]["segment_count"]
+                )
+            
+            return speaker_stats
+            
+        except Exception as e:
+            logger.error(f"Speaker statistics calculation failed: {e}")
+            return {}
+    
+    def _calculate_quality_statistics(
+        self, 
+        segments: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """品質統計計算"""
+        try:
+            if not segments:
+                return {
+                    "avg_confidence": 0.0,
+                    "min_confidence": 0.0,
+                    "max_confidence": 0.0,
+                    "total_segments": 0,
+                    "low_confidence_segments": 0
+                }
+            
+            confidences = [segment.get("confidence", 0.0) for segment in segments]
+            low_threshold = 0.7
+            
+            return {
+                "avg_confidence": sum(confidences) / len(confidences),
+                "min_confidence": min(confidences),
+                "max_confidence": max(confidences),
+                "total_segments": len(segments),
+                "low_confidence_segments": len([c for c in confidences if c < low_threshold])
+            }
+            
+        except Exception as e:
+            logger.error(f"Quality statistics calculation failed: {e}")
+            return {}
     
     async def _get_audio_duration(self, audio_path: str) -> float:
         """音声時間（秒）を取得"""

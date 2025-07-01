@@ -1,0 +1,23 @@
+# Google Cloud設定
+GOOGLE_CLOUD_PROJECT=voicenote-dev
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+
+# pyannote.audio設定（Hugging Face Token）
+HUGGINGFACE_TOKEN=your_huggingface_token_here
+
+# 音声処理設定
+MAX_AUDIO_DURATION=28800  # 8時間（秒）
+CHUNK_DURATION_MINUTES=30
+OVERLAP_MINUTES=5
+MAX_PARALLEL_CHUNKS=3
+
+# Cloud Tasks設定
+AUDIO_PROCESSING_QUEUE=audio-processing
+CHUNK_PROCESSING_QUEUE=chunk-processing
+TRANSCRIPTION_QUEUE=transcription-tasks
+
+# ログレベル
+LOG_LEVEL=INFO
+
+# 開発モード
+DEVELOPMENT_MODE=true

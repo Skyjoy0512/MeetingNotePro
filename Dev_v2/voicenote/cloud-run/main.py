@@ -12,11 +12,47 @@ import uvicorn
 # Google Cloud
 from google.cloud import firestore, storage, logging as cloud_logging
 
+# pyannote.audio認証設定
+import torch
+from huggingface_hub import login
+from dotenv import load_dotenv
+
 # 自作モジュール
 from audio_processor import AudioProcessor
 from speaker_separation import SpeakerSeparationService
 from transcription_apis import TranscriptionService, APIConfig
 from voice_learning import VoiceLearningService
+
+# 環境変数読み込み
+load_dotenv()
+
+def setup_pyannote_authentication():
+    """pyannote.audio認証設定"""
+    try:
+        hf_token = os.getenv('HUGGINGFACE_TOKEN')
+        if hf_token:
+            login(token=hf_token)
+            logger.info("✅ Hugging Face authentication successful")
+        else:
+            logger.warning("⚠️ HUGGINGFACE_TOKEN not found - some models may not be accessible")
+    except Exception as e:
+        logger.error(f"❌ Hugging Face authentication failed: {e}")
+
+def setup_pytorch_settings():
+    """PyTorch設定最適化"""
+    try:
+        # CPUのみでの動作を設定（Cloud Run環境）
+        torch.set_num_threads(4)  # Cloud Runの4vCPUに最適化
+        
+        # メモリ効率化
+        if torch.cuda.is_available():
+            logger.info("🚀 CUDA available - GPU acceleration enabled")
+        else:
+            logger.info("💻 Using CPU for audio processing")
+            
+        logger.info("✅ PyTorch settings configured")
+    except Exception as e:
+        logger.error(f"❌ PyTorch setup failed: {e}")
 
 # ログ設定
 if os.getenv('GOOGLE_CLOUD_PROJECT'):
@@ -26,6 +62,10 @@ if os.getenv('GOOGLE_CLOUD_PROJECT'):
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 認証・設定初期化
+setup_pyannote_authentication()
+setup_pytorch_settings()
 
 # Firebase クライアント初期化
 db = firestore.Client()
@@ -129,15 +169,30 @@ async def run_audio_processing(user_id: str, audio_id: str, config: Dict[str, An
     try:
         logger.info(f"Running audio processing: {user_id}/{audio_id}")
         
-        # 処理設定
+        # 処理設定（API設定を含む）
         processing_config = {
             "enable_speaker_separation": config.get("enable_speaker_separation", True),
             "max_speakers": config.get("max_speakers", 5),
             "use_user_embedding": config.get("use_user_embedding", True),
             "language": config.get("language", "ja"),
             "chunk_duration": config.get("chunk_duration", 30),
-            "overlap_duration": config.get("overlap_duration", 5)
+            "overlap_duration": config.get("overlap_duration", 5),
+            # API設定を追加
+            "transcription_config": {
+                "provider": config.get("speech_provider", "openai"),
+                "api_key": config.get("speech_api_key", ""),
+                "model": config.get("speech_model", "whisper-1"),
+                "settings": config.get("speech_settings", {})
+            },
+            "llm_config": {
+                "provider": config.get("llm_provider", "openai"),
+                "api_key": config.get("llm_api_key", ""),
+                "model": config.get("llm_model", "gpt-4"),
+                "settings": config.get("llm_settings", {})
+            }
         }
+        
+        logger.info(f"Processing config: {dict(processing_config, transcription_config={'provider': processing_config['transcription_config']['provider'], 'api_key': '***masked***'}, llm_config={'provider': processing_config['llm_config']['provider'], 'api_key': '***masked***'})}")
         
         # 音声処理実行
         result = await audio_processor.process_audio(
